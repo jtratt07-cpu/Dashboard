@@ -1,0 +1,7 @@
+streamlit
+requests
+pandas
+openpyxl
+pybaseball
+nba_api
+nfl_data_py
