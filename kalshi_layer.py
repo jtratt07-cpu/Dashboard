@@ -47,8 +47,8 @@ def classify_market(title: str) -> str:
     """
     t = (title or "").lower()
 
-    # Spread signals
-    if re.search(r'win(s)?\s+by\s+more\s+than|win(s)?\s+by\s+at\s+least|\bcover\b|\bspread\b', t):
+    # Spread signals — catch "wins by" in ANY form before prop check runs
+    if re.search(r'win(s)?\s+by\s+(more\s+than|at\s+least|\d)|wins?\s+by\b|\bcover\b|\bspread\b', t):
         return "spread"
     if re.search(r'[-+]\d+\.?\d*\s*points?\b', t):
         return "spread"
@@ -185,7 +185,16 @@ def parse_game_moneyline(market: dict, home: str, away: str) -> dict | None:
     subtitle = (market.get("yes_sub_title") or "").strip()
     team = find_nba_team(subtitle) if subtitle else None
 
-    # Old format / fallback: try ticker suffix (e.g. KXNBAGAME-26MAR09PHICLE-CLE → "CLE")
+    # CBB/generic fallback: subtitle may contain a college team name not in NBA_ALIASES
+    if not team and subtitle:
+        sub_lower = subtitle.lower()
+        for candidate in [home, away]:
+            words = [w for w in candidate.lower().split() if len(w) > 3]
+            if words and any(w in sub_lower for w in words):
+                team = candidate
+                break
+
+    # Ticker suffix fallback (NBA: e.g. KXNBAGAME-26MAR09PHICLE-CLE → "CLE")
     if not team:
         ticker = market.get("ticker", "")
         parts = ticker.rsplit("-", 1)
@@ -198,6 +207,15 @@ def parse_game_moneyline(market: dict, home: str, away: str) -> dict | None:
     # Last resort: scan full title (old format)
     if not team:
         team = find_nba_team(market.get("title", ""))
+
+    # CBB fallback for full title
+    if not team:
+        title_lower = market.get("title", "").lower()
+        for candidate in [home, away]:
+            words = [w for w in candidate.lower().split() if len(w) > 3]
+            if words and any(w in title_lower for w in words):
+                team = candidate
+                break
 
     if not team:
         return None
@@ -212,8 +230,27 @@ def parse_game_spread(market: dict, home: str, away: str) -> dict | None:
     """
     subtitle = (market.get("yes_sub_title") or "").strip()
     team = find_nba_team(subtitle) if subtitle else None
+
+    # CBB/generic fallback from subtitle
+    if not team and subtitle:
+        sub_lower = subtitle.lower()
+        for candidate in [home, away]:
+            words = [w for w in candidate.lower().split() if len(w) > 3]
+            if words and any(w in sub_lower for w in words):
+                team = candidate
+                break
+
     if not team:
         team = find_nba_team(market.get("title", ""))
+
+    # CBB fallback for full title
+    if not team:
+        title_lower = market.get("title", "").lower()
+        for candidate in [home, away]:
+            words = [w for w in candidate.lower().split() if len(w) > 3]
+            if words and any(w in title_lower for w in words):
+                team = candidate
+                break
 
     title = market.get("title", "") + " " + subtitle
     tl = title.lower()

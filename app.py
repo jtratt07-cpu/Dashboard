@@ -28,6 +28,7 @@ from ui_layer import (
     render_market_section, render_score_row, render_no_picks,
     render_nba_net_ratings, render_cbb_ratings, render_player_stats_table,
     render_model_editor, build_market_table,
+    render_model_game_row, render_player_projections_table,
 )
 from utils import find_nba_player
 
@@ -110,11 +111,11 @@ with st.sidebar:
     st.session_state["min_edge"] = float(min_edge)
 
     min_pqs = st.slider(
-        "Min Pick Quality Score",
+        "Confidence Filter",
         0, 100,
         MIN_PQS_ADVANCED if advanced else MIN_PQS_DEFAULT,
         key="min_pqs_slider",
-        help="PQS blends edge, confidence, stat stability, and market quality.",
+        help="Higher = fewer but stronger picks. Default is 55 (Good or better).",
     )
     st.session_state["min_pqs"] = min_pqs
 
@@ -134,8 +135,7 @@ with st.sidebar:
         st.session_state["prop_preset"] = prop_preset
 
     st.divider()
-    st.caption("Model vs Kalshi: edge = model prob − Kalshi implied prob.")
-    st.caption("All Kalshi data cached 10 min · ESPN data cached 10 min.")
+    st.caption("Data refreshes every 10 minutes.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data loading — ALL fetching happens here, before any tab renders
@@ -220,7 +220,7 @@ def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, adva
                 "away":           away,
                 "time_et":        game.get("time_et", ""),
                 "pick_team":      team or "",
-                "pick_direction": "wins (moneyline)",
+                "pick_direction": "to win  ·  Moneyline",
                 "market_type":    "moneyline",
                 "model_prob":     model_p,
                 "kalshi_prob":    kp,
@@ -254,14 +254,13 @@ def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, adva
                 continue
 
             bullets = get_game_reasoning(result, home, away)
-            nick = team.split()[-1]
             picks.append({
                 "sport":          "NBA",
                 "home":           home,
                 "away":           away,
                 "time_et":        game.get("time_et", ""),
                 "pick_team":      team or "",
-                "pick_direction": f"covers {line:+.1f}",
+                "pick_direction": f"to cover {line:+.1f}  ·  Spread",
                 "market_type":    "spread",
                 "model_prob":     model_p,
                 "kalshi_prob":    kp,
@@ -333,7 +332,7 @@ def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs):
                 "away":           away,
                 "time_et":        game.get("time_et", ""),
                 "pick_team":      team,
-                "pick_direction": "wins (moneyline)",
+                "pick_direction": "to win  ·  Moneyline",
                 "market_type":    "moneyline",
                 "model_prob":     model_p,
                 "kalshi_prob":    kp,
@@ -454,31 +453,27 @@ with tabs[0]:
     if not games:
         st.info(f"No {sport_lbl} games found on ESPN for this date.")
     elif not kalshi_events:
-        # Show raw game list with model only — no Kalshi prices
-        st.warning("Kalshi markets not available. Showing model predictions only.")
+        # Show model-only rows — no Kalshi prices available
+        st.warning("No Kalshi markets found for today — showing model projections only.")
         for game in games:
-            home = game.get("home","?")
-            away = game.get("away","?")
+            home = game.get("home", "?")
+            away = game.get("away", "?")
             if sport == "NBA":
                 result = nba_game_model(home, away, nba_weights)
             else:
                 result = cbb_game_model(home, away, cbb_weights)
             if result.get("valid"):
-                st.markdown(
-                    f"**{away} @ {home}**  ·  {game.get('time_et','')}  |  "
-                    f"Model: {home.split()[-1]} {result['home_prob']*100:.0f}% / "
-                    f"{away.split()[-1]} {result['away_prob']*100:.0f}%"
-                )
+                render_model_game_row(game, result, sport)
     elif not game_picks:
-        render_no_picks("No games with sufficient edge vs Kalshi today.")
+        render_no_picks()
 
         # In advanced mode, show all games with model lines even without edge
         if advanced:
             st.markdown("---")
             st.markdown("**All games (no qualifying edge):**")
             for game in games:
-                home = game.get("home","?")
-                away = game.get("away","?")
+                home = game.get("home", "?")
+                away = game.get("away", "?")
                 if sport == "NBA":
                     result = nba_game_model(home, away, nba_weights)
                 else:
@@ -498,12 +493,11 @@ with tabs[0]:
                     st.markdown(
                         f"**{away} @ {home}**  ·  {game.get('time_et','')}  |  "
                         f"Model: {result['home_prob']*100:.0f}% / {result['away_prob']*100:.0f}%  ·  "
-                        f"Kalshi (home ML): {kp_str}"
+                        f"Market (home): {kp_str}"
                     )
     else:
         st.caption(
-            f"{len(game_picks)} qualifying pick{'s' if len(game_picks) != 1 else ''}  ·  "
-            f"min edge {min_edge_val:.0f}%  ·  min PQS {min_pqs_val}"
+            f"{len(game_picks)} qualifying pick{'s' if len(game_picks) != 1 else ''} for {date_lbl}"
         )
         for pick in game_picks:
             render_game_pick_card(pick, advanced=advanced)
@@ -514,8 +508,8 @@ with tabs[0]:
             st.markdown("#### All Markets by Game")
             seen_adv = set()
             for game in games:
-                home = game.get("home","?")
-                away = game.get("away","?")
+                home = game.get("home", "?")
+                away = game.get("away", "?")
                 key  = f"{away}@{home}"
                 if key in seen_adv:
                     continue
@@ -578,16 +572,19 @@ with tabs[1]:
     if sport != "NBA":
         st.info("Player props are currently available for NBA only.")
     elif not prop_markets:
-        st.warning(
-            "No NBA prop markets found on Kalshi. "
-            "Prop markets may not be listed yet for today's games."
-        )
+        st.info("No Kalshi player prop markets available today.")
+        st.markdown("#### Tonight's Player Projections")
+        st.caption("Model estimates based on season averages for players in tonight's games. No market comparison available.")
+        render_player_projections_table(games)
     elif not prop_picks:
         render_no_picks(
             "No props with sufficient edge today. "
             "Props require a higher edge threshold — "
             "PRA/Pts/Reb/Ast need 6%+, 3PM needs 8%+, blocks/steals need 10%+."
         )
+        st.markdown("#### Tonight's Player Projections")
+        st.caption("Model estimates based on season averages.")
+        render_player_projections_table(games)
     else:
         stat_labels = {
             "pra":"PRA","points":"Points","rebounds":"Rebounds","assists":"Assists",
@@ -600,8 +597,7 @@ with tabs[1]:
             by_stat.setdefault(st_key, []).append(p)
 
         st.caption(
-            f"{len(prop_picks)} qualifying prop{'s' if len(prop_picks) != 1 else ''}  ·  "
-            f"min edge vs threshold  ·  min PQS {min_pqs_val}"
+            f"{len(prop_picks)} qualifying prop{'s' if len(prop_picks) != 1 else ''} for {sel_date.strftime('%B %-d')}"
         )
 
         for stat_key in ["pra", "points", "rebounds", "assists", "3pm", "blocks", "steals"]:
@@ -625,7 +621,7 @@ with tabs[1]:
                         "Stat":      pp.get("stat_type","").upper(),
                         "Line":      pp.get("line",""),
                         "Direction": pp.get("over_under","").capitalize(),
-                        "Kalshi%":   f"{pp.get('kalshi_prob',0)*100:.0f}%",
+                        "Market%":   f"{pp.get('kalshi_prob',0)*100:.0f}%",
                     })
                 st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
             else:
@@ -701,17 +697,16 @@ with tabs[4]:
     st.dataframe(pd.DataFrame(thresh_data), use_container_width=True, hide_index=True)
 
     st.divider()
-    st.markdown("**Pick Quality Score (PQS)**")
+    st.markdown("**How Picks Are Scored**")
     st.info(
-        "PQS is a 0–100 composite score that measures how trustworthy a pick is beyond raw edge. "
-        "Not all +6% edges are equal — a +6% on PRA with stable minutes is very different from "
-        "+6% on blocks with erratic recent form.\n\n"
-        "**Components:**\n"
-        "- **Edge Strength (40%):** How far the edge exceeds the minimum threshold for this stat type\n"
-        "- **Confidence (25%):** Distance of model probability from 50/50\n"
-        "- **Stat Stability (20%):** Inherent stability of the stat (PRA=82, blocks=38)\n"
-        "- **Market Quality (15%):** How reliable the Kalshi price is (bid-ask vs last price)\n\n"
-        "**Interpretation:** 75+ Strong · 55–74 Good · 35–54 Marginal · <35 Suppressed"
+        "Each pick gets a score from 0–100 based on how trustworthy it is — not just raw edge. "
+        "A big edge on a volatile stat like blocks is worth less than the same edge on a stable stat like PRA.\n\n"
+        "**What goes into the score:**\n"
+        "- **Edge strength (40%):** How far the model disagrees with the market\n"
+        "- **Conviction (25%):** How confident the model is (far from 50/50)\n"
+        "- **Stat stability (20%):** How predictable the stat type is (PRA is most stable, blocks least)\n"
+        "- **Market quality (15%):** How reliable the market price is\n\n"
+        "**Score guide:** 75+ Strong  ·  55–74 Good  ·  35–54 Marginal  ·  <35 Suppressed"
     )
 
     st.divider()
@@ -754,6 +749,6 @@ with tabs[5]:
         cols[1].metric("Game Picks",  len(game_picks))
         cols[2].metric("Prop Picks",  len(prop_picks))
         avg_pqs = round(sum(p["pqs"] for p in game_picks + prop_picks) / total_today)
-        cols[3].metric("Avg PQS",     avg_pqs)
+        cols[3].metric("Avg Score",   avg_pqs)
     else:
         st.caption("No qualifying picks today.")

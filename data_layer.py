@@ -187,9 +187,14 @@ def search_kalshi_markets(keyword: str, status: str = "open", limit: int = 200) 
 def _get_nba_prop_markets_inner() -> list:
     """
     Discover NBA player prop markets from Kalshi.
-    Tries multiple known series tickers and keyword searches.
+    Tries known series tickers for individual over/under prop markets.
     Returns combined, deduplicated list of market dicts.
     Not directly cached — wrapping function get_nba_prop_markets is cached.
+
+    Note: Kalshi's multi-outcome KXMVECROSSCATEGORY bundle markets have no individual
+    pricing (bid/ask/last_price all 0) and cannot be used for edge calculation.
+    Keyword searches return cross-category bundles and game spreads — both useless.
+    Only individual over/under series are attempted here.
     """
     seen    = set()
     markets = []
@@ -201,18 +206,13 @@ def _get_nba_prop_markets_inner() -> list:
                 seen.add(tk)
                 markets.append(m)
 
-    # Try known prop series tickers
+    # Try known prop series tickers (individual over/under format)
     for series in ["KXNBAPROP", "KXNBA3D", "KXNBAPRA"]:
         evs = get_kalshi_events(series)
-        if evs:
-            for ev in evs:
-                tks = ev.get("event_ticker", ev.get("ticker", ""))
-                if tks:
-                    add_batch(get_kalshi_markets_for_event(tks))
-
-    # Keyword search fallback for player props
-    for kw in ["NBA points", "NBA rebounds", "NBA assists", "NBA blocks", "NBA steals", "NBA 3-pointer"]:
-        add_batch(search_kalshi_markets(kw, "open", 100))
+        for ev in evs:
+            tks = ev.get("event_ticker", ev.get("ticker", ""))
+            if tks:
+                add_batch(get_kalshi_markets_for_event(tks))
 
     return markets
 
@@ -245,13 +245,42 @@ def load_nba_day(date_str: str) -> dict:
     }
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _search_cbb_events_by_keyword() -> list:
+    """
+    Fallback CBB market discovery via keyword search.
+    Catches conference tournament and NCAA tournament games if they appear
+    under a different series ticker than KXCBBGAME.
+    Returns a synthetic list of event-like dicts keyed by event_ticker.
+    """
+    markets = search_kalshi_markets("college basketball winner", "open", 200)
+    events: dict = {}
+    for m in markets:
+        ev_tk = m.get("event_ticker", "")
+        if not ev_tk:
+            continue
+        if ev_tk not in events:
+            events[ev_tk] = {
+                "event_ticker": ev_tk,
+                "title":        m.get("title", ""),
+                "markets":      [],
+            }
+        events[ev_tk]["markets"].append(m)
+    return list(events.values())
+
+
 def load_cbb_day(date_str: str) -> dict:
     """
     Load all CBB data for a given date.
     Returns dict with keys: games, espn_error, kalshi_events.
+    Tries KXCBBGAME first; falls back to keyword search for conf/NCAA tournament games.
     """
     games, espn_err = get_espn_games(date_str, "cbb")
     kalshi_events   = get_kalshi_events("KXCBBGAME")
+
+    # Fallback: keyword search catches conf tournament & NCAA games not under KXCBBGAME
+    if not kalshi_events:
+        kalshi_events = _search_cbb_events_by_keyword()
 
     return {
         "games":         games,

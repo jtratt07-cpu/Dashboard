@@ -40,6 +40,12 @@ section[data-testid="stSidebar"] *{color:#c9d1d9;}
 .badge-pqs-good{background:#3d2f00;color:#d29922;}
 .badge-pqs-marginal{background:#1c2a40;color:#58a6ff;}
 
+/* Prob row */
+.prob-row{margin:6px 0 3px;}
+.odds-val{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:1.05rem;}
+.odds-label{color:#8b949e;font-size:.78rem;margin-left:8px;}
+.mkt-compare{color:#8b949e;font-size:.82rem;margin-bottom:4px;}
+
 .reasoning{margin-top:8px;}
 .reasoning ul{margin:0;padding-left:16px;}
 .reasoning li{font-size:.85rem;color:#8b949e;margin-bottom:3px;line-height:1.45;}
@@ -69,19 +75,23 @@ def _edge_badge(edge_pct: float | None) -> str:
         return '<span class="badge badge-conf">—</span>'
     cls = "badge-edge" if edge_pct > 0 else "badge-edge-neg"
     sign = "+" if edge_pct > 0 else ""
-    return f'<span class="badge {cls}">{sign}{edge_pct:.1f}% edge</span>'
+    return f'<span class="badge {cls}">{sign}{edge_pct:.0f}% value edge</span>'
 
-def _pqs_badge(pqs: int) -> str:
+def _pqs_badge(pqs: int, advanced: bool = False) -> str:
     label, color = pqs_label(pqs)
     cls_map = {"green": "badge-pqs-strong", "yellow": "badge-pqs-good",
                "grey": "badge-pqs-marginal", "red": "badge-conf"}
     cls = cls_map.get(color, "badge-conf")
-    return f'<span class="badge {cls}">PQS {pqs} · {label}</span>'
+    if advanced:
+        return f'<span class="badge {cls}">PQS {pqs} · {label}</span>'
+    icon_map  = {"green": "🔥", "yellow": "✅", "grey": "⚡", "red": "·"}
+    label_map = {"green": "Strong Pick", "yellow": "Good Pick", "grey": "Marginal", "red": "Low Confidence"}
+    return f'<span class="badge {cls}">{icon_map.get(color, "·")} {label_map.get(color, label)}</span>'
 
-def _conf_badge(conf: float | None) -> str:
-    if conf is None:
+def _conf_badge(conf: float | None, advanced: bool = False) -> str:
+    if not advanced or conf is None:
         return ""
-    return f'<span class="badge badge-conf">{conf:.0f}% conf</span>'
+    return f'<span class="badge badge-conf">Conviction: {conf:.0f}%</span>'
 
 def _card_class(pqs: int) -> str:
     if pqs >= 75:
@@ -95,6 +105,24 @@ def _reasoning_html(bullets: list) -> str:
         return ""
     items = "".join(f"<li>{b}</li>" for b in bullets)
     return f'<div class="reasoning"><ul>{items}</ul></div>'
+
+def _prob_row_html(model_p: float, kalshi_p: float) -> str:
+    """
+    Render the odds + market comparison row.
+    Shows Kalshi-implied odds in green (the bet we're recommending),
+    then plain-English comparison of market vs model probability.
+    """
+    odds_str = am_odds(kalshi_p)
+    return (
+        f'<div class="prob-row">'
+        f'  <span class="odds-val">{odds_str}</span>'
+        f'  <span class="odds-label">← bet at these odds</span>'
+        f'</div>'
+        f'<div class="mkt-compare">'
+        f'Market says: <span class="mono">{kalshi_p*100:.0f}%</span> chance'
+        f'&nbsp;·&nbsp;Our model: <span class="mono">{model_p*100:.0f}%</span>'
+        f'</div>'
+    )
 
 
 def render_game_pick_card(pick: dict, advanced: bool = False) -> None:
@@ -121,21 +149,14 @@ def render_game_pick_card(pick: dict, advanced: bool = False) -> None:
     badges = (
         _edge_badge(edge_pct) +
         " " +
-        _pqs_badge(pqs) +
+        _pqs_badge(pqs, advanced=advanced) +
         " " +
-        _conf_badge(pick.get("confidence"))
+        _conf_badge(pick.get("confidence"), advanced=advanced)
     )
 
     prob_row = ""
     if model_p is not None and kalshi_p is not None:
-        odds_str = am_odds(kalshi_p)
-        prob_row = (
-            f'<span class="grey" style="font-size:.82rem;">'
-            f'Model: <span class="mono">{model_p*100:.0f}%</span> &nbsp;·&nbsp; '
-            f'Kalshi: <span class="mono">{kalshi_p*100:.0f}%</span> '
-            f'(<span class="mono">{odds_str}</span>)'
-            f'</span>'
-        )
+        prob_row = _prob_row_html(model_p, kalshi_p)
 
     html = f"""
     <div class="{_card_class(pqs)}">
@@ -191,21 +212,14 @@ def render_prop_pick_card(pick: dict, advanced: bool = False) -> None:
     badges = (
         _edge_badge(edge_pct) +
         " " +
-        _pqs_badge(pqs) +
+        _pqs_badge(pqs, advanced=advanced) +
         " " +
-        _conf_badge(pick.get("confidence"))
+        _conf_badge(pick.get("confidence"), advanced=advanced)
     )
 
     prob_row = ""
     if model_p is not None and kalshi_p is not None:
-        odds_str = am_odds(kalshi_p)
-        prob_row = (
-            f'<span class="grey" style="font-size:.82rem;">'
-            f'Model: <span class="mono">{model_p*100:.0f}%</span> &nbsp;·&nbsp; '
-            f'Kalshi: <span class="mono">{kalshi_p*100:.0f}%</span> '
-            f'(<span class="mono">{odds_str}</span>)'
-            f'</span>'
-        )
+        prob_row = _prob_row_html(model_p, kalshi_p)
 
     html = f"""
     <div class="{_card_class(pqs)}">
@@ -228,6 +242,78 @@ def render_prop_pick_card(pick: dict, advanced: bool = False) -> None:
                 st.caption(f"Sigma: ±{mr.get('sigma', '—')}")
                 st.caption(f"Stability: {(mr.get('stability', 0)*100):.0f}%")
                 st.caption(f"Over prob: {mr.get('over_prob', 0)*100:.1f}%")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Model-only game row (when Kalshi markets unavailable)
+# ─────────────────────────────────────────────────────────────────────────────
+def render_model_game_row(game: dict, result: dict, sport: str = "NBA") -> None:
+    """
+    Compact model-only row for when Kalshi markets aren't available.
+    Shows matchup, game time, and model win probabilities.
+    """
+    home = game.get("home", "?")
+    away = game.get("away", "?")
+    home_nick = home.split()[-1]
+    away_nick = away.split()[-1]
+    hp = result.get("home_prob", 0.5)
+    ap = result.get("away_prob", 0.5)
+    margin = result.get("expected_margin")
+    time_et = game.get("time_et", "")
+
+    if margin and abs(margin) > 0.5:
+        fav = home_nick if margin > 0 else away_nick
+        margin_str = f"&nbsp;·&nbsp; Model favors **{fav}** by {abs(margin):.1f} pts"
+    else:
+        margin_str = ""
+
+    st.markdown(
+        f"**{away_nick} @ {home_nick}** &nbsp;`{time_et}`&nbsp;·&nbsp;"
+        f"{home_nick}: **{hp*100:.0f}%** &nbsp;/&nbsp; {away_nick}: **{ap*100:.0f}%**"
+        f"{margin_str}",
+        unsafe_allow_html=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Player projections table (Props tab fallback)
+# ─────────────────────────────────────────────────────────────────────────────
+def render_player_projections_table(games: list) -> None:
+    """
+    Show model season-average projections for players on tonight's NBA teams.
+    Used when no Kalshi prop markets are available.
+    """
+    from utils import NBA_PLAYER_STATS
+    import pandas as pd
+
+    tonight_teams: set = set()
+    for g in games:
+        if g.get("home"):
+            tonight_teams.add(g["home"])
+        if g.get("away"):
+            tonight_teams.add(g["away"])
+
+    rows = []
+    for name, s in NBA_PLAYER_STATS.items():
+        team = s.get("team", "")
+        if team not in tonight_teams:
+            continue
+        rows.append({
+            "Player":     name,
+            "Team":       team.split()[-1],
+            "PRA":        s.get("pra", "—"),
+            "Points":     s.get("pts", "—"),
+            "Rebounds":   s.get("reb", "—"),
+            "Assists":    s.get("ast", "—"),
+            "3-Pointers": s.get("3pm", "—"),
+        })
+
+    if not rows:
+        st.caption("No player data available for tonight's teams.")
+        return
+
+    df = pd.DataFrame(rows).sort_values("PRA", ascending=False)
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -326,13 +412,13 @@ def render_model_editor(
 # No-picks message
 # ─────────────────────────────────────────────────────────────────────────────
 def render_no_picks(reason: str = "") -> None:
-    msg = "No qualifying picks found."
+    msg = "No value picks found for today."
     if reason:
         msg += f" {reason}"
     st.info(msg)
     st.caption(
-        "Picks only appear when the model finds a meaningful edge over Kalshi implied probability "
-        "and the Pick Quality Score is sufficient. Try Advanced Mode to lower thresholds."
+        "Picks appear when our model finds meaningful value over the market price. "
+        "Try lowering filters or check back later."
     )
 
 

@@ -538,8 +538,12 @@ def get_game_reasoning(result: dict, home: str, away: str, kalshi_prob: float | 
     if kalshi_prob is not None:
         model_prob = result.get("home_prob") or result.get("away_prob")
         if model_prob:
-            edge = round((model_prob - kalshi_prob) * 100, 1)
-            bullets.append(f"Kalshi implied {kalshi_prob*100:.0f}% — model shows {model_prob*100:.0f}% (+{edge}% edge)")
+            # Determine which team is the pick
+            if model_prob == result.get("away_prob"):
+                pick_nick = away_nick
+            else:
+                pick_nick = home_nick
+            bullets.append(f"Market prices {pick_nick} at {kalshi_prob*100:.0f}% — our model says {model_prob*100:.0f}%")
 
     return bullets[:3]
 
@@ -557,22 +561,20 @@ def get_cbb_reasoning(result: dict, home: str, away: str, kalshi_prob: float | N
 
     if abs(gap) >= 5:
         favored = home_nick if gap > 0 else away_nick
-        bullets.append(f"Efficiency model strongly favors {favored} (composite gap: {abs(gap):.0f} pts)")
+        bullets.append(f"Rating model strongly favors {favored} ({abs(gap):.0f}-point composite advantage)")
 
     home_stats = result.get("home_stats", {})
     away_stats = result.get("away_stats", {})
     em_diff = round(home_stats.get("eff_margin", 0) - away_stats.get("eff_margin", 0), 1)
     if abs(em_diff) >= 3:
         better = home_nick if em_diff > 0 else away_nick
-        bullets.append(f"{better} efficiency margin advantage: +{abs(em_diff):.1f}")
+        bullets.append(f"{better} is rated {abs(em_diff):.1f} pts better overall by efficiency metrics")
 
     if upset_ctx.get("upset_rate") and upset_ctx["upset_rate"] >= 0.30:
         bullets.append(f"Historical upset rate for this seed matchup: {upset_ctx['upset_rate']:.0%} — {upset_ctx.get('note', '')}")
     elif kalshi_prob:
         model_prob = result.get("home_prob", 0.5)
-        edge = round((model_prob - kalshi_prob) * 100, 1)
-        sign = "+" if edge > 0 else ""
-        bullets.append(f"Kalshi implied {kalshi_prob*100:.0f}% — model shows {model_prob*100:.0f}% ({sign}{edge}%)")
+        bullets.append(f"Market prices at {kalshi_prob*100:.0f}% — our model says {model_prob*100:.0f}%")
 
     return bullets[:3]
 
@@ -600,7 +602,7 @@ def get_prop_reasoning(result: dict, player_name: str, stat_type: str,
 
     if proj is not None:
         direction = "Over" if over_under == "over" else "Under"
-        bullets.append(f"Projection: {proj:.1f} {stat_lbl}  ·  Kalshi line: {line} ({direction})")
+        bullets.append(f"Our projection: {proj:.1f} {stat_lbl}  ·  Bet line: {line} ({direction})")
 
     if s_avg is not None and r_avg is not None:
         trend = "trending up" if r_avg > s_avg + 0.5 else ("trending down" if r_avg < s_avg - 0.5 else "consistent")
@@ -608,10 +610,8 @@ def get_prop_reasoning(result: dict, player_name: str, stat_type: str,
 
     if kalshi_prob is not None and ovrprb is not None:
         model_side = ovrprb if over_under == "over" else (1 - ovrprb)
-        edge = round((model_side - kalshi_prob) * 100, 1)
-        sign = "+" if edge > 0 else ""
-        stab_note = " (volatile stat — higher threshold applied)" if stab < 0.7 else ""
-        bullets.append(f"Kalshi {kalshi_prob*100:.0f}%  →  Model {model_side*100:.0f}%  ({sign}{edge}%{stab_note})")
+        stab_note = " (volatile stat — higher bar applied)" if stab < 0.7 else ""
+        bullets.append(f"Market says {kalshi_prob*100:.0f}% — our model says {model_side*100:.0f}%{stab_note}")
 
     return bullets[:3]
 
