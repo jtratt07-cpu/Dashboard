@@ -336,6 +336,47 @@ def match_game_to_event(game: dict, kalshi_events: list) -> str | None:
     return best_tk if best_score >= 4 else None
 
 
+# ── KXNBASPREAD market parser ─────────────────────────────────────────────────
+def parse_spread_market_title(title: str, home: str, away: str) -> dict | None:
+    """
+    Parse a KXNBASPREAD market title.
+    Format: "Team Name wins by over N.N Points?"
+    Returns {team, line, is_home} or None.
+
+    Works for both NBA full names ("Los Angeles L wins by over 5.5 Points?")
+    and fallback city/nickname matching against home/away.
+    """
+    tl = (title or "").lower()
+    line_m = re.search(r'over\s+(\d+\.?\d*)\s*points?', tl)
+    if not line_m:
+        return None
+    try:
+        line = float(line_m.group(1))
+    except ValueError:
+        return None
+
+    # Extract team portion: everything before "wins by"
+    team_part = re.split(r'\s+wins?\s+by', title, flags=re.IGNORECASE)[0].strip()
+
+    # Try NBA alias lookup first
+    team = find_nba_team(team_part)
+
+    # Fallback: word-overlap match against home/away strings
+    if not team:
+        tp_lower = team_part.lower()
+        for candidate in [home, away]:
+            words = [w for w in candidate.lower().split() if len(w) > 3]
+            if words and any(w in tp_lower for w in words):
+                team = candidate
+                break
+
+    if not team:
+        return None
+
+    is_home = (team == home)
+    return {"team": team, "line": line, "is_home": is_home}
+
+
 # ── Prop market discovery from a list of raw market dicts ────────────────────
 def discover_prop_markets(raw_markets: list) -> list:
     """

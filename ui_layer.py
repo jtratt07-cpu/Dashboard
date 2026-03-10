@@ -5,7 +5,7 @@ No API calls. No model computation. Renders pre-computed data only.
 """
 import streamlit as st
 from utils import am_odds, prob_to_pct, normalize_weights
-from model_layer import pqs_label, NBA_GAME_PRESETS, CBB_GAME_PRESETS, PROP_PRESETS, get_preset_weights
+from model_layer import pqs_label, classify_pick, NBA_GAME_PRESETS, CBB_GAME_PRESETS, PROP_PRESETS, get_preset_weights
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CSS — injected once from app.py
@@ -39,6 +39,17 @@ section[data-testid="stSidebar"] *{color:#c9d1d9;}
 .badge-pqs-strong{background:#1f4e2f;color:#3fb950;}
 .badge-pqs-good{background:#3d2f00;color:#d29922;}
 .badge-pqs-marginal{background:#1c2a40;color:#58a6ff;}
+
+/* Pick category badges */
+.cat-best-bet{background:#1a3a2a;color:#3fb950;border:1px solid #2ea043;}
+.cat-underdog{background:#2a1f3a;color:#a78bfa;}
+.cat-good-value{background:#1c2a1c;color:#4ade80;}
+.cat-sharp{background:#21262d;color:#79c0ff;}
+.cat-spot-play{background:#21262d;color:#8b949e;}
+
+/* EV / Kelly row */
+.ev-val{color:#4ade80;font-family:'JetBrains Mono',monospace;font-size:.82rem;font-weight:600;}
+.kelly-val{color:#f0a13a;font-family:'JetBrains Mono',monospace;font-size:.82rem;font-weight:600;}
 
 /* Prob row */
 .prob-row{margin:6px 0 3px;}
@@ -106,21 +117,36 @@ def _reasoning_html(bullets: list) -> str:
     items = "".join(f"<li>{b}</li>" for b in bullets)
     return f'<div class="reasoning"><ul>{items}</ul></div>'
 
-def _prob_row_html(model_p: float, kalshi_p: float) -> str:
+def _prob_row_html(
+    model_p: float,
+    kalshi_p: float,
+    ev_pct: float | None = None,
+    kelly_pct: float | None = None,
+) -> str:
     """
     Render the odds + market comparison row.
     Shows Kalshi-implied odds in green (the bet we're recommending),
-    then plain-English comparison of market vs model probability.
+    EV% and Kelly bet sizing when available, then market vs model comparison.
     """
-    odds_str = am_odds(kalshi_p)
+    odds_str  = am_odds(kalshi_p)
+    ev_str    = (
+        f'&nbsp; <span class="ev-val">EV +{ev_pct:.1f}%</span>'
+        if ev_pct is not None and ev_pct > 0 else ""
+    )
+    kelly_str = (
+        f'&nbsp;·&nbsp; <span class="kelly-val">Bet {kelly_pct:.1f}% bankroll</span>'
+        if kelly_pct is not None and kelly_pct > 0 else ""
+    )
     return (
         f'<div class="prob-row">'
         f'  <span class="odds-val">{odds_str}</span>'
         f'  <span class="odds-label">← bet at these odds</span>'
+        f'{ev_str}'
         f'</div>'
         f'<div class="mkt-compare">'
-        f'Market says: <span class="mono">{kalshi_p*100:.0f}%</span> chance'
-        f'&nbsp;·&nbsp;Our model: <span class="mono">{model_p*100:.0f}%</span>'
+        f'Market: <span class="mono">{kalshi_p*100:.0f}%</span>'
+        f'&nbsp;·&nbsp;Model: <span class="mono">{model_p*100:.0f}%</span>'
+        f'{kelly_str}'
         f'</div>'
     )
 
@@ -145,14 +171,22 @@ def _injury_html(injuries: list) -> str:
     )
 
 
+def _category_badge(edge_pct: float | None, model_p: float | None, pqs: int) -> str:
+    """Return a plain-English category badge for a pick."""
+    if edge_pct is None or model_p is None:
+        return ""
+    label, icon, cls = classify_pick(edge_pct, model_p, pqs)
+    return f'<span class="badge {cls}">{icon} {label}</span>'
+
+
 def render_game_pick_card(pick: dict, advanced: bool = False) -> None:
     """
     Render a single game pick card.
 
     pick dict keys:
       sport, home, away, time_et, pick_team, pick_direction,
-      model_prob, kalshi_prob, edge_pct, pqs, confidence,
-      reasoning (list[str]), model_result (full result dict),
+      model_prob, kalshi_prob, edge_pct, ev_pct, kelly_pct,
+      pqs, confidence, reasoning (list[str]), model_result (full result dict),
       market_type (moneyline/spread/total),
       injuries_home, injuries_away (optional, lists of injury dicts)
     """
@@ -167,17 +201,23 @@ def render_game_pick_card(pick: dict, advanced: bool = False) -> None:
     header = f'{sport} · {pick.get("away","")} @ {pick.get("home","")} · {pick.get("time_et","")}'
     title  = f'{pick_team} {pick.get("pick_direction","wins")}'
 
+    cat_badge = _category_badge(edge_pct, model_p, pqs)
     badges = (
+        cat_badge +
+        (" " if cat_badge else "") +
         _edge_badge(edge_pct) +
         " " +
         _pqs_badge(pqs, advanced=advanced) +
-        " " +
-        _conf_badge(pick.get("confidence"), advanced=advanced)
+        (" " + _conf_badge(pick.get("confidence"), advanced=advanced) if advanced else "")
     )
 
     prob_row = ""
     if model_p is not None and kalshi_p is not None:
-        prob_row = _prob_row_html(model_p, kalshi_p)
+        prob_row = _prob_row_html(
+            model_p, kalshi_p,
+            ev_pct=pick.get("ev_pct"),
+            kelly_pct=pick.get("kelly_pct"),
+        )
 
     # Injuries: show both teams combined (picked team first)
     inj_home = pick.get("injuries_home", [])
@@ -217,37 +257,43 @@ def render_prop_pick_card(pick: dict, advanced: bool = False) -> None:
 
     pick dict keys:
       player, stat_type, line, over_under, projection,
-      model_prob, kalshi_prob, edge_pct, pqs, confidence,
-      reasoning (list[str]), model_result (full result dict),
+      model_prob, kalshi_prob, edge_pct, ev_pct, kelly_pct,
+      pqs, confidence, reasoning (list[str]), model_result (full result dict),
       team (optional)
     """
     pqs       = pick.get("pqs", 0)
     edge_pct  = pick.get("edge_pct")
     player    = pick.get("player", "Unknown Player")
-    stat_lbl  = pick.get("stat_type", "").upper()
+    stat_type = pick.get("stat_type", "")
+    stat_lbl  = stat_type.upper()
     line      = pick.get("line", 0)
-    direction = pick.get("over_under", "over").capitalize()
     proj      = pick.get("projection")
     model_p   = pick.get("model_prob")
     kalshi_p  = pick.get("kalshi_prob")
     reasoning = pick.get("reasoning", [])
 
     header = f'NBA Props · {player}'
-    title  = f'{direction} {line} {stat_lbl}'
+    title  = f'Over {line} {stat_lbl}'
     if proj is not None:
         title += f'  <span style="color:#8b949e;font-size:.92rem;">(proj: {proj:.1f})</span>'
 
+    cat_badge = _category_badge(edge_pct, model_p, pqs)
     badges = (
+        cat_badge +
+        (" " if cat_badge else "") +
         _edge_badge(edge_pct) +
         " " +
         _pqs_badge(pqs, advanced=advanced) +
-        " " +
-        _conf_badge(pick.get("confidence"), advanced=advanced)
+        (" " + _conf_badge(pick.get("confidence"), advanced=advanced) if advanced else "")
     )
 
     prob_row = ""
     if model_p is not None and kalshi_p is not None:
-        prob_row = _prob_row_html(model_p, kalshi_p)
+        prob_row = _prob_row_html(
+            model_p, kalshi_p,
+            ev_pct=pick.get("ev_pct"),
+            kelly_pct=pick.get("kelly_pct"),
+        )
 
     html = f"""
     <div class="{_card_class(pqs)}">

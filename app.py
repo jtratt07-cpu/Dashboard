@@ -14,12 +14,13 @@ from utils import now_et, prob_to_pct, am_odds, NBA_NET_RATINGS, EDGE_THRESHOLDS
 from data_layer import load_nba_day, load_cbb_day, get_full_event_markets
 from kalshi_layer import (
     match_game_to_event, categorize_game_markets,
-    get_implied_prob, discover_prop_markets,
+    get_implied_prob, discover_prop_markets, parse_spread_market_title,
 )
 from model_layer import (
     nba_game_model, nba_cover_prob, cbb_game_model, prop_model,
     calculate_edge, calculate_pick_quality, pick_passes_threshold,
     get_game_reasoning, get_spread_reasoning, get_cbb_reasoning, get_prop_reasoning,
+    kelly_criterion, expected_value_pct, classify_pick,
     NBA_GAME_PRESETS, CBB_GAME_PRESETS, PROP_PRESETS,
     normalize_weights, get_preset_weights,
 )
@@ -176,6 +177,7 @@ def _init_state():
         "cbb_preset":         "recommended",
         "prop_preset":        "recommended",
         "show_totals":        False,
+        "kelly_fraction":     0.5,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -249,6 +251,16 @@ with st.sidebar:
     )
     st.session_state["min_odds"] = min_odds
 
+    kelly_fraction = st.slider(
+        "Kelly Fraction",
+        0.1, 1.0,
+        float(st.session_state.get("kelly_fraction", 0.5)),
+        step=0.1,
+        key="kelly_fraction_slider",
+        help="Fraction of full Kelly to bet. 0.5 = Half-Kelly (recommended). 0.25 = conservative. 1.0 = full Kelly (aggressive).",
+    )
+    st.session_state["kelly_fraction"] = kelly_fraction
+
     if advanced:
         st.divider()
         st.markdown("**Model Presets**")
@@ -279,8 +291,9 @@ with st.spinner("Loading data…"):
 games         = day_data.get("games", [])
 espn_err      = day_data.get("espn_error")
 kalshi_events = day_data.get("kalshi_events", [])
-prop_markets  = day_data.get("prop_markets", [])   # only for NBA
-injuries_data = day_data.get("injuries", {})        # NBA only; {} for CBB
+spread_events = day_data.get("spread_events", [])   # KXNBASPREAD — NBA only
+prop_markets  = day_data.get("prop_markets", [])    # only for NBA
+injuries_data = day_data.get("injuries", {})         # NBA only; {} for CBB
 
 # Active model weights (from session state presets)
 nba_weights  = normalize_weights(get_preset_weights("nba_game", st.session_state.get("nba_preset","recommended")))
@@ -290,10 +303,14 @@ prop_weights = {}   # resolved per stat type below
 # ─────────────────────────────────────────────────────────────────────────────
 # Build picks — all model computation before rendering
 # ─────────────────────────────────────────────────────────────────────────────
-def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, advanced, injuries=None, min_odds=-1000):
-    """Build list of qualified NBA game picks."""
+def _build_nba_game_picks(
+    games, kalshi_events, weights, min_edge, min_pqs, advanced,
+    injuries=None, min_odds=-1000, spread_events=None, kelly_frac=0.5,
+):
+    """Build list of qualified NBA game picks (moneyline + KXNBASPREAD)."""
     picks = []
     seen_matchups = set()
+    spread_events = spread_events or []
 
     for game in games:
         home = game.get("home")
@@ -311,114 +328,129 @@ def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, adva
         if not result.get("valid"):
             continue
 
-        # Find Kalshi event and markets
+        # ── Moneyline picks (KXNBAGAME) ──────────────────────────────────────
         event_tk = match_game_to_event(game, kalshi_events)
-        if not event_tk:
-            continue
+        if event_tk:
+            ev = next((e for e in kalshi_events if e.get("event_ticker") == event_tk), {})
+            nested = ev.get("markets", [])
+            all_markets = get_full_event_markets(event_tk, nested)
+            cats = categorize_game_markets(all_markets, home, away)
 
-        ev = next((e for e in kalshi_events if e.get("event_ticker") == event_tk), {})
-        nested = ev.get("markets", [])
-        all_markets = get_full_event_markets(event_tk, nested)
-        cats = categorize_game_markets(all_markets, home, away)
+            for ml in cats["moneyline"]:
+                kp = ml.get("kalshi_prob")
+                if kp is None:
+                    continue
+                ti = ml.get("team_info") or {}
+                team = ti.get("team")
+                if team == home:
+                    model_p = result["home_prob"]
+                elif team == away:
+                    model_p = result["away_prob"]
+                else:
+                    continue
 
-        # Moneyline picks
-        for ml in cats["moneyline"]:
-            kp = ml.get("kalshi_prob")
-            if kp is None:
-                continue
-            ti = ml.get("team_info") or {}
-            team = ti.get("team")
-            if team == home:
-                model_p = result["home_prob"]
-            elif team == away:
-                model_p = result["away_prob"]
-            else:
-                continue
+                edge = calculate_edge(model_p, kp)
+                if edge is None or edge < min_edge:
+                    continue
+                if _odds_int(kp) < min_odds:
+                    continue
 
-            edge = calculate_edge(model_p, kp)
-            if edge is None or edge < min_edge:
-                continue
+                mq  = 1.0 if ml["market_dict"].get("yes_bid") else 0.7
+                pqs = calculate_pick_quality(edge, "game", model_p, mq)
+                if pqs < min_pqs:
+                    continue
 
-            # Odds filter: skip heavy favorites beyond user threshold
-            if _odds_int(kp) < min_odds:
-                continue
+                bullets = get_game_reasoning(result, home, away, kp if team == home else (1 - kp))
+                picks.append({
+                    "sport":          "NBA",
+                    "home":           home,
+                    "away":           away,
+                    "time_et":        game.get("time_et", ""),
+                    "pick_team":      team or "",
+                    "pick_direction": "to win  ·  Moneyline",
+                    "market_type":    "moneyline",
+                    "model_prob":     model_p,
+                    "kalshi_prob":    kp,
+                    "edge_pct":       edge,
+                    "ev_pct":         expected_value_pct(model_p, kp),
+                    "kelly_pct":      kelly_criterion(model_p, kp, kelly_frac),
+                    "pqs":            pqs,
+                    "confidence":     result.get("confidence"),
+                    "reasoning":      bullets,
+                    "model_result":   result,
+                    "injuries_home":  (injuries or {}).get(home, []),
+                    "injuries_away":  (injuries or {}).get(away, []),
+                })
 
-            mq = 1.0 if ml["market_dict"].get("yes_bid") else 0.7
-            pqs = calculate_pick_quality(edge, "game", model_p, mq)
-            if pqs < min_pqs:
-                continue
+        # ── Alt-spread picks (KXNBASPREAD) ────────────────────────────────────
+        # Match game to a KXNBASPREAD event, find best-edge line nearest model margin
+        sp_event_tk = match_game_to_event(game, spread_events)
+        if sp_event_tk:
+            sp_ev = next((e for e in spread_events if e.get("event_ticker") == sp_event_tk), {})
+            sp_nested = sp_ev.get("markets", [])
+            sp_all = get_full_event_markets(sp_event_tk, sp_nested)
 
-            bullets = get_game_reasoning(result, home, away, kp if team == home else (1 - kp))
-            picks.append({
-                "sport":          "NBA",
-                "home":           home,
-                "away":           away,
-                "time_et":        game.get("time_et", ""),
-                "pick_team":      team or "",
-                "pick_direction": "to win  ·  Moneyline",
-                "market_type":    "moneyline",
-                "model_prob":     model_p,
-                "kalshi_prob":    kp,
-                "edge_pct":       edge,
-                "pqs":            pqs,
-                "confidence":     result.get("confidence"),
-                "reasoning":      bullets,
-                "model_result":   result,
-                "injuries_home":  (injuries or {}).get(home, []),
-                "injuries_away":  (injuries or {}).get(away, []),
-            })
+            best_sp_pick  = None
+            best_sp_edge  = min_edge  # must beat min_edge to be considered
 
-        # Spread picks (first qualifying spread)
-        for sp in cats["spread"][:3]:
-            kp = sp.get("kalshi_prob")
-            si = sp.get("spread_info") or {}
-            team = si.get("team")
-            line = si.get("line")
-            if kp is None or team is None or line is None:
-                continue
+            for m in sp_all:
+                title = m.get("title", "")
+                parsed = parse_spread_market_title(title, home, away)
+                if parsed is None:
+                    continue
+                team = parsed["team"]
+                line = parsed["line"]
 
-            model_p = nba_cover_prob(team, line, home, away)
-            if model_p is None:
-                continue
+                kp = get_implied_prob(m, require_bid_ask=True)
+                if kp is None:
+                    continue
 
-            edge = calculate_edge(model_p, kp)
-            if edge is None or edge < min_edge:
-                continue
+                model_p = nba_cover_prob(team, line, home, away)
+                if model_p is None:
+                    continue
 
-            # Odds filter
-            if _odds_int(kp) < min_odds:
-                continue
+                edge = calculate_edge(model_p, kp)
+                if edge is None or edge < min_edge:
+                    continue
+                if _odds_int(kp) < min_odds:
+                    continue
 
-            mq = 1.0 if sp["market_dict"].get("yes_bid") else 0.7
-            pqs = calculate_pick_quality(edge, "game", model_p, mq)
-            if pqs < min_pqs:
-                continue
+                pqs = calculate_pick_quality(edge, "game", model_p, 1.0)
+                if pqs < min_pqs:
+                    continue
 
-            bullets = get_spread_reasoning(result, home, away, team, line, model_p, kp)
-            picks.append({
-                "sport":          "NBA",
-                "home":           home,
-                "away":           away,
-                "time_et":        game.get("time_et", ""),
-                "pick_team":      team or "",
-                "pick_direction": f"to cover {line:+.1f}  ·  Spread",
-                "market_type":    "spread",
-                "model_prob":     model_p,
-                "kalshi_prob":    kp,
-                "edge_pct":       edge,
-                "pqs":            pqs,
-                "confidence":     result.get("confidence"),
-                "reasoning":      bullets,
-                "model_result":   result,
-                "injuries_home":  (injuries or {}).get(home, []),
-                "injuries_away":  (injuries or {}).get(away, []),
-            })
+                if edge > best_sp_edge:
+                    best_sp_edge = edge
+                    team_nick    = team.split()[-1]
+                    bullets      = get_spread_reasoning(result, home, away, team, line, model_p, kp)
+                    best_sp_pick = {
+                        "sport":          "NBA",
+                        "home":           home,
+                        "away":           away,
+                        "time_et":        game.get("time_et", ""),
+                        "pick_team":      team or "",
+                        "pick_direction": f"wins by {line:.1f}+  ·  Alt Spread",
+                        "market_type":    "spread",
+                        "model_prob":     model_p,
+                        "kalshi_prob":    kp,
+                        "edge_pct":       edge,
+                        "ev_pct":         expected_value_pct(model_p, kp),
+                        "kelly_pct":      kelly_criterion(model_p, kp, kelly_frac),
+                        "pqs":            pqs,
+                        "confidence":     result.get("confidence"),
+                        "reasoning":      bullets,
+                        "model_result":   result,
+                        "injuries_home":  (injuries or {}).get(home, []),
+                        "injuries_away":  (injuries or {}).get(away, []),
+                    }
+            if best_sp_pick:
+                picks.append(best_sp_pick)
 
     # Sort: PQS descending
     return sorted(picks, key=lambda x: x["pqs"], reverse=True)
 
 
-def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs, min_odds=-1000):
+def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs, min_odds=-1000, kelly_frac=0.5):
     """Build list of qualified CBB game picks."""
     picks = []
     seen  = set()
@@ -463,12 +495,11 @@ def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs, min_
             edge = calculate_edge(model_p, kp)
             if edge is None or edge < min_edge:
                 continue
-
-            # Odds filter: skip heavy favorites beyond user threshold
             if _odds_int(kp) < min_odds:
                 continue
 
-            pqs = calculate_pick_quality(edge, "game", model_p)
+            mq  = 1.0 if ml["market_dict"].get("yes_bid") else 0.7
+            pqs = calculate_pick_quality(edge, "game", model_p, mq)
             if pqs < min_pqs:
                 continue
 
@@ -484,6 +515,8 @@ def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs, min_
                 "model_prob":     model_p,
                 "kalshi_prob":    kp,
                 "edge_pct":       edge,
+                "ev_pct":         expected_value_pct(model_p, kp),
+                "kelly_pct":      kelly_criterion(model_p, kp, kelly_frac),
                 "pqs":            pqs,
                 "confidence":     result.get("confidence"),
                 "reasoning":      bullets,
@@ -493,17 +526,33 @@ def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs, min_
     return sorted(picks, key=lambda x: x["pqs"], reverse=True)
 
 
-def _build_prop_picks(prop_markets, min_edge, min_pqs, prop_preset, min_odds=-1000):
-    """Build list of qualified NBA player prop picks from Kalshi markets."""
+def _build_prop_picks(prop_markets, min_edge, min_pqs, prop_preset, min_odds=-1000, kelly_frac=0.5):
+    """
+    Build list of qualified NBA player prop picks from Kalshi markets.
+
+    Best-line filter: For each (player, stat_type) pair, only evaluate the
+    single Kalshi line where implied probability is closest to 50%.
+    This eliminates trivial lines (e.g. 'Tatum 15+ at -233') and surfaces
+    the most contested/interesting market for each player-stat combination.
+    Only over/YES bets (Kalshi doesn't offer NO on player props).
+    """
     parsed_props = discover_prop_markets(prop_markets)
-    picks = []
     stat_order = ["pra", "points", "rebounds", "assists", "3pm", "blocks", "steals"]
 
+    # ── Best-line filter: keep only the line closest to 50% per (player, stat) ──
+    best_line: dict = {}   # key=(player.lower(), stat_type) → prop dict
     for pp in parsed_props:
+        kp  = pp.get("kalshi_prob", 0)
+        key = (pp["player"].lower(), pp["stat_type"])
+        if key not in best_line or abs(kp - 0.5) < abs(best_line[key]["kalshi_prob"] - 0.5):
+            best_line[key] = pp
+
+    picks = []
+    for pp in best_line.values():
         player_name = pp.get("player", "")
         stat_type   = pp.get("stat_type", "pra")
         line        = pp.get("line", 0)
-        over_under  = pp.get("over_under", "over")
+        over_under  = pp.get("over_under", "over")   # always "over" on Kalshi props
         kp          = pp.get("kalshi_prob")
 
         player_stats = find_nba_player(player_name)
@@ -515,12 +564,8 @@ def _build_prop_picks(prop_markets, min_edge, min_pqs, prop_preset, min_odds=-10
         if not result.get("valid"):
             continue
 
-        # Use the probability for the predicted direction
-        if over_under == "over":
-            model_p = result["over_prob"]
-        else:
-            model_p = result["under_prob"]
-
+        # Props are always YES/over — model_p is the over probability
+        model_p = result["over_prob"]
         if model_p is None or kp is None:
             continue
 
@@ -542,17 +587,19 @@ def _build_prop_picks(prop_markets, min_edge, min_pqs, prop_preset, min_odds=-10
         if pqs < min_pqs:
             continue
 
-        bullets = get_prop_reasoning(result, player_name, stat_type, line, over_under, kp)
+        bullets = get_prop_reasoning(result, player_name, stat_type, line, "over", kp)
         picks.append({
             "player":       player_stats.get("name", player_name),
             "team":         player_stats.get("team", ""),
             "stat_type":    stat_type,
             "line":         line,
-            "over_under":   over_under,
+            "over_under":   "over",
             "projection":   result.get("projection"),
             "model_prob":   model_p,
             "kalshi_prob":  kp,
             "edge_pct":     edge,
+            "ev_pct":       expected_value_pct(model_p, kp),
+            "kelly_pct":    kelly_criterion(model_p, kp, kelly_frac),
             "pqs":          pqs,
             "confidence":   result.get("confidence"),
             "reasoning":    bullets,
@@ -567,11 +614,11 @@ def _build_prop_picks(prop_markets, min_edge, min_pqs, prop_preset, min_odds=-10
 # ─────────────────────────────────────────────────────────────────────────────
 # Compute all picks (before rendering any tab)
 # ─────────────────────────────────────────────────────────────────────────────
-min_edge_val = st.session_state["min_edge"]
-min_pqs_val  = st.session_state["min_pqs"]
-advanced     = st.session_state["advanced_mode"]
-
-min_odds_val = st.session_state.get("min_odds", -500)
+min_edge_val    = st.session_state["min_edge"]
+min_pqs_val     = st.session_state["min_pqs"]
+advanced        = st.session_state["advanced_mode"]
+min_odds_val    = st.session_state.get("min_odds", -500)
+kelly_frac_val  = st.session_state.get("kelly_fraction", 0.5)
 
 if sport == "NBA":
     game_picks = _build_nba_game_picks(
@@ -579,17 +626,21 @@ if sport == "NBA":
         min_edge_val, min_pqs_val, advanced,
         injuries=injuries_data,
         min_odds=min_odds_val,
+        spread_events=spread_events,
+        kelly_frac=kelly_frac_val,
     )
     prop_picks = _build_prop_picks(
         prop_markets, min_edge_val, min_pqs_val,
         st.session_state.get("prop_preset", "recommended"),
         min_odds=min_odds_val,
+        kelly_frac=kelly_frac_val,
     )
 else:
     game_picks = _build_cbb_game_picks(
         games, kalshi_events, cbb_weights,
         min_edge_val, min_pqs_val,
         min_odds=min_odds_val,
+        kelly_frac=kelly_frac_val,
     )
     prop_picks = []
 
@@ -603,6 +654,25 @@ with tabs[0]:
     sport_lbl = "NBA" if sport == "NBA" else "CBB"
     date_lbl  = sel_date.strftime("%A, %B %-d")
     st.markdown(f"### {sport_lbl} · {date_lbl}")
+
+    # ── Stats header bar ──────────────────────────────────────────────────────
+    _all_picks = game_picks + prop_picks
+    _avg_ev    = (
+        sum(p["ev_pct"] for p in _all_picks if p.get("ev_pct") is not None)
+        / max(sum(1 for p in _all_picks if p.get("ev_pct") is not None), 1)
+    ) if _all_picks else 0.0
+    _avg_kelly = (
+        sum(p["kelly_pct"] for p in _all_picks if p.get("kelly_pct") is not None)
+        / max(sum(1 for p in _all_picks if p.get("kelly_pct") is not None), 1)
+    ) if _all_picks else 0.0
+
+    hc1, hc2, hc3, hc4, hc5 = st.columns(5)
+    hc1.metric("Games Today",    len(games))
+    hc2.metric("Kalshi Events",  len(kalshi_events) + len(spread_events))
+    hc3.metric("Qualified Picks", len(game_picks))
+    hc4.metric("Avg EV",         f"+{_avg_ev:.1f}%" if _avg_ev > 0 else f"{_avg_ev:.1f}%")
+    hc5.metric("Avg Kelly",      f"{_avg_kelly:.1f}%" if _avg_kelly > 0 else "—")
+    st.divider()
 
     if espn_err:
         st.error(f"ESPN error: {espn_err}")
@@ -859,7 +929,31 @@ with tabs[4]:
     st.dataframe(pd.DataFrame(thresh_data), use_container_width=True, hide_index=True)
 
     st.divider()
-    st.markdown("**How Picks Are Scored**")
+    st.markdown("**Pick Categories — What Each Label Means**")
+    st.markdown("""
+| Badge | When you'll see it | What to do |
+|---|---|---|
+| 🎯 **Best Bet** | Edge ≥ 12% and high model conviction (PQS 70+) | Highest priority — go bigger on these |
+| 🐕 **Value Underdog** | Model backs the underdog the market is sleeping on (edge ≥ 8%, model < 48%) | Great risk/reward — market is wrong on direction |
+| 📈 **Good Value** | Solid edge on a reliable stat type (edge ≥ 8%, PQS 55+) | Standard bet sizing, core picks |
+| ⚡ **Sharp Pick** | Strong model signal, smaller edge — still positive EV (PQS 65+) | Smaller position, let it ride |
+| 💡 **Spot Play** | Positive edge but lower conviction or volatile stat | Advanced users only — small stakes |
+""")
+
+    st.divider()
+    st.markdown("**EV% and Kelly Sizing — How They Work**")
+    st.info(
+        "**Expected Value (EV%)** tells you how much you gain or lose per dollar bet in the long run. "
+        "A +8% EV means you'd expect to profit \\$8 for every \\$100 bet over many similar wagers. "
+        "Only positive EV bets are shown.\n\n"
+        "**Kelly % (Bankroll)** is the mathematically optimal bet size as a fraction of your bankroll. "
+        "The slider in the sidebar sets the Kelly Fraction — 0.5 (Half-Kelly) is the standard "
+        "risk-managed approach. 1.0 is full Kelly (aggressive, high variance). "
+        "Example: Kelly 3.2% on a \\$1,000 bankroll = \\$32 bet."
+    )
+
+    st.divider()
+    st.markdown("**How Picks Are Scored (0–100)**")
     st.info(
         "Each pick gets a score from 0–100 based on how trustworthy it is — not just raw edge. "
         "A big edge on a volatile stat like blocks is worth less than the same edge on a stable stat like PRA.\n\n"

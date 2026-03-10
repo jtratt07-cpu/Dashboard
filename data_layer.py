@@ -281,14 +281,27 @@ def get_nba_injuries() -> dict:
     return result
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def get_nba_spread_events() -> list:
+    """
+    Fetch NBA alt-spread events from KXNBASPREAD series.
+    Each event holds multiple markets: "Team wins by over N.N Points?"
+    with live bid/ask pricing for multiple lines per team per game.
+    Returns list of event dicts (same structure as get_kalshi_events).
+    """
+    return get_kalshi_events("KXNBASPREAD")
+
+
 def load_nba_day(date_str: str) -> dict:
     """
     Load all NBA data for a given date string (YYYYMMDD).
-    Returns dict with keys: games, espn_error, kalshi_events, prop_markets, injuries.
+    Returns dict with keys: games, espn_error, kalshi_events,
+    spread_events, prop_markets, injuries.
     All fetching happens here — zero API calls during rendering.
     """
     games, espn_err = get_espn_games(date_str, "nba")
     kalshi_events   = get_kalshi_events("KXNBAGAME")
+    spread_events   = get_nba_spread_events()
     prop_markets    = get_nba_prop_markets()
     injuries        = get_nba_injuries()
 
@@ -296,6 +309,7 @@ def load_nba_day(date_str: str) -> dict:
         "games":          games,
         "espn_error":     espn_err,
         "kalshi_events":  kalshi_events,
+        "spread_events":  spread_events,
         "prop_markets":   prop_markets,
         "injuries":       injuries,
     }

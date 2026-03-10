@@ -670,6 +670,78 @@ def get_prop_reasoning(result: dict, player_name: str, stat_type: str,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Kelly Criterion + Expected Value (functional, not cosmetic)
+# ─────────────────────────────────────────────────────────────────────────────
+def kelly_criterion(
+    model_prob:     float,
+    kalshi_prob:    float,
+    kelly_fraction: float = 0.5,
+) -> float | None:
+    """
+    Half-Kelly bet sizing as % of bankroll.
+    formula: [(b·p − q) / b] × kelly_fraction
+    where b = decimal odds − 1 = (1/kalshi_prob) − 1,  p = model_prob,  q = 1 − p.
+    Returns None if edge is zero or negative (no bet).
+    Default kelly_fraction=0.5 (half-Kelly) for risk management.
+    """
+    if not model_prob or not kalshi_prob or kalshi_prob <= 0 or kalshi_prob >= 1:
+        return None
+    b = (1.0 / kalshi_prob) - 1.0   # decimal odds − 1
+    p = model_prob
+    q = 1.0 - p
+    kelly_raw = (b * p - q) / b
+    if kelly_raw <= 0:
+        return None                  # negative Kelly = no positive edge, no bet
+    return round(kelly_raw * kelly_fraction * 100, 1)   # expressed as % of bankroll
+
+
+def expected_value_pct(
+    model_prob:  float,
+    kalshi_prob: float,
+) -> float | None:
+    """
+    Expected value as % of stake.
+    EV% = [p × (payout − 1) − q] × 100
+    payout = decimal odds = 1 / kalshi_prob.
+    Positive EV means the bet has long-run value; negative means it doesn't.
+    """
+    if not model_prob or not kalshi_prob or kalshi_prob <= 0 or kalshi_prob >= 1:
+        return None
+    payout = 1.0 / kalshi_prob
+    ev = model_prob * (payout - 1.0) - (1.0 - model_prob)
+    return round(ev * 100, 1)   # % of stake
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pick Classification (plain-English categories)
+# ─────────────────────────────────────────────────────────────────────────────
+def classify_pick(edge_pct: float, model_prob: float, pqs: int) -> tuple:
+    """
+    Classify a pick into a plain-English category.
+    Returns (label, icon, css_class).
+
+    Categories (in priority order):
+      Best Bet      — massive edge + high confidence
+      Value Underdog— model backs underdog the market is sleeping on
+      Good Value    — solid edge on a reliable signal
+      Sharp Pick    — strong model signal with modest edge
+      Spot Play     — positive edge but smaller or volatile context
+    """
+    # Favour-agnostic: is the model backing the underdog?
+    is_underdog = model_prob < 0.48
+
+    if edge_pct >= 12 and pqs >= 70:
+        return ("Best Bet", "🎯", "cat-best-bet")
+    if is_underdog and edge_pct >= 8:
+        return ("Value Underdog", "🐕", "cat-underdog")
+    if edge_pct >= 8 and pqs >= 55:
+        return ("Good Value", "📈", "cat-good-value")
+    if pqs >= 65 and edge_pct >= 5:
+        return ("Sharp Pick", "⚡", "cat-sharp")
+    return ("Spot Play", "💡", "cat-spot-play")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Pick validation helpers
 # ─────────────────────────────────────────────────────────────────────────────
 def pick_passes_threshold(edge_pct: float | None, stat_type: str) -> bool:
