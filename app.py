@@ -27,7 +27,7 @@ from ui_layer import (
     APP_CSS, render_game_pick_card, render_prop_pick_card,
     render_market_section, render_score_row, render_no_picks,
     render_nba_net_ratings, render_cbb_ratings, render_player_stats_table,
-    render_model_editor, build_market_table, render_matchup_breakdown,
+    render_model_editor, build_market_table,
 )
 
 # ── Inline helpers (avoids import-cache issues on Streamlit Cloud) ─────────
@@ -92,6 +92,56 @@ def render_player_projections_table(games: list, injuries: dict = None) -> None:
         return
     df = pd.DataFrame(rows).sort_values("PRA", ascending=False)
     st.dataframe(df, use_container_width=True, hide_index=True)
+def render_matchup_breakdown(games: list, injuries: dict) -> None:
+    """
+    Show per-game injury report for tonight's matchups.
+    Only renders if at least one game has reported injuries.
+    Defined inline to avoid Streamlit Cloud bytecode cache issues.
+    """
+    if not games or not injuries:
+        return
+    games_with_inj = []
+    for game in games:
+        home_inj = injuries.get(game.get("home", ""), [])
+        away_inj = injuries.get(game.get("away", ""), [])
+        if home_inj or away_inj:
+            games_with_inj.append(game)
+    if not games_with_inj:
+        return
+    st.markdown("---")
+    st.markdown("#### 🏥 Tonight's Injury Report")
+    st.caption("Source: ESPN · Updates every 10 minutes")
+    for game in games_with_inj:
+        home      = game.get("home", "?")
+        away      = game.get("away", "?")
+        home_nick = home.split()[-1]
+        away_nick = away.split()[-1]
+        home_inj  = injuries.get(home, [])
+        away_inj  = injuries.get(away, [])
+        with st.expander(f"{away_nick} @ {home_nick}  ·  {game.get('time_et', '')}"):
+            col_away, col_home = st.columns(2)
+            for col, nick, inj_list in [
+                (col_away, away_nick, away_inj),
+                (col_home, home_nick, home_inj),
+            ]:
+                with col:
+                    st.markdown(f"**{nick}**")
+                    if not inj_list:
+                        st.caption("No reported injuries")
+                    else:
+                        for inj in inj_list:
+                            status  = inj["status"]
+                            icon    = "❌" if status == "Out" else ("⚠️" if status == "Day-To-Day" else "🔴")
+                            detail  = inj.get("detail", "")
+                            side    = inj.get("side", "")
+                            loc     = f"{side} {detail}".strip() if side else detail
+                            pos     = inj.get("position", "")
+                            pos_str = f" ({pos})" if pos else ""
+                            st.markdown(
+                                f"{icon} **{inj['player']}**{pos_str}  \n"
+                                f"&nbsp;&nbsp;{status}{', ' + loc if loc else ''}"
+                            )
+
 from utils import find_nba_player
 
 # ─────────────────────────────────────────────────────────────────────────────
