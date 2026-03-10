@@ -28,8 +28,53 @@ from ui_layer import (
     render_market_section, render_score_row, render_no_picks,
     render_nba_net_ratings, render_cbb_ratings, render_player_stats_table,
     render_model_editor, build_market_table,
-    render_model_game_row, render_player_projections_table,
 )
+
+# ── Inline helpers (avoids import-cache issues on Streamlit Cloud) ─────────
+def render_model_game_row(game: dict, result: dict, sport: str = "NBA") -> None:
+    """Compact model-only row when Kalshi markets are unavailable."""
+    home = game.get("home", "?")
+    away = game.get("away", "?")
+    home_nick = home.split()[-1]
+    away_nick = away.split()[-1]
+    hp = result.get("home_prob", 0.5)
+    ap = result.get("away_prob", 0.5)
+    margin = result.get("expected_margin")
+    time_et = game.get("time_et", "")
+    if margin and abs(margin) > 0.5:
+        fav = home_nick if margin > 0 else away_nick
+        margin_str = f"&nbsp;·&nbsp; Model favors **{fav}** by {abs(margin):.1f} pts"
+    else:
+        margin_str = ""
+    st.markdown(
+        f"**{away_nick} @ {home_nick}** &nbsp;`{time_et}`&nbsp;·&nbsp;"
+        f"{home_nick}: **{hp*100:.0f}%** &nbsp;/&nbsp; {away_nick}: **{ap*100:.0f}%**"
+        f"{margin_str}",
+        unsafe_allow_html=True,
+    )
+
+def render_player_projections_table(games: list) -> None:
+    """Show season-average projections for players on tonight's NBA teams."""
+    from utils import NBA_PLAYER_STATS
+    tonight_teams: set = set()
+    for g in games:
+        if g.get("home"): tonight_teams.add(g["home"])
+        if g.get("away"): tonight_teams.add(g["away"])
+    rows = []
+    for name, s in NBA_PLAYER_STATS.items():
+        if s.get("team", "") not in tonight_teams:
+            continue
+        rows.append({
+            "Player": name, "Team": s.get("team","").split()[-1],
+            "PRA": s.get("pra","—"), "Points": s.get("pts","—"),
+            "Rebounds": s.get("reb","—"), "Assists": s.get("ast","—"),
+            "3-Pointers": s.get("3pm","—"),
+        })
+    if not rows:
+        st.caption("No player data available for tonight's teams.")
+        return
+    df = pd.DataFrame(rows).sort_values("PRA", ascending=False)
+    st.dataframe(df, use_container_width=True, hide_index=True)
 from utils import find_nba_player
 
 # ─────────────────────────────────────────────────────────────────────────────
