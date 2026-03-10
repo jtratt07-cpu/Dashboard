@@ -20,11 +20,15 @@ import re
 from utils import find_nba_team, team_text_match, city_of, nick_of
 
 # ── Implied probability from a Kalshi market dict ────────────────────────────
-def get_implied_prob(market: dict):
+def get_implied_prob(market: dict, require_bid_ask: bool = False):
     """
     Extract implied probability from a Kalshi market.
     Prefers mid-market (bid+ask)/2; falls back to last_price.
     Returns float in [0,1] or None.
+
+    require_bid_ask=True: only return a price if both yes_bid AND yes_ask
+    are live (> 0).  Use this for prop markets where last_price is often
+    stale (from a previous settled game) and produces nonsense odds.
     """
     yb = market.get("yes_bid")  or 0
     ya = market.get("yes_ask")  or 0
@@ -32,6 +36,8 @@ def get_implied_prob(market: dict):
 
     if yb > 0 and ya > 0:
         return round((yb + ya) / 200, 4)
+    if require_bid_ask:
+        return None           # no active two-sided market — skip
     if lp > 0:
         return round(lp / 100, 4)
     return None
@@ -350,9 +356,9 @@ def discover_prop_markets(raw_markets: list) -> list:
         if parsed is None:
             continue
 
-        kp = get_implied_prob(m)
+        kp = get_implied_prob(m, require_bid_ask=True)
         if kp is None:
-            continue   # no price — skip
+            continue   # no active bid/ask — skip stale or unpriced markets
 
         # Deduplicate by player + stat + line
         dedup_key = f"{parsed['player'].lower()}_{parsed['stat_type']}_{parsed['line']}"

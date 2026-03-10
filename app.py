@@ -144,6 +144,14 @@ def render_matchup_breakdown(games: list, injuries: dict) -> None:
 
 from utils import find_nba_player
 
+def _odds_int(prob: float) -> int:
+    """Convert implied probability to American odds integer."""
+    if prob <= 0 or prob >= 1:
+        return 0
+    if prob >= 0.5:
+        return -round(prob / (1 - prob) * 100)
+    return round((1 - prob) / prob * 100)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config
 # ─────────────────────────────────────────────────────────────────────────────
@@ -231,6 +239,16 @@ with st.sidebar:
     )
     st.session_state["min_pqs"] = min_pqs
 
+    min_odds = st.slider(
+        "Max favorite odds",
+        -1000, 500,
+        -500,
+        step=50,
+        key="min_odds_slider",
+        help="Filters out heavy favorites. -500 = allow up to -500 odds. 0 = underdogs only. +500 = all.",
+    )
+    st.session_state["min_odds"] = min_odds
+
     if advanced:
         st.divider()
         st.markdown("**Model Presets**")
@@ -272,7 +290,7 @@ prop_weights = {}   # resolved per stat type below
 # ─────────────────────────────────────────────────────────────────────────────
 # Build picks — all model computation before rendering
 # ─────────────────────────────────────────────────────────────────────────────
-def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, advanced, injuries=None):
+def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, advanced, injuries=None, min_odds=-1000):
     """Build list of qualified NBA game picks."""
     picks = []
     seen_matchups = set()
@@ -321,6 +339,10 @@ def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, adva
             if edge is None or edge < min_edge:
                 continue
 
+            # Odds filter: skip heavy favorites beyond user threshold
+            if _odds_int(kp) < min_odds:
+                continue
+
             mq = 1.0 if ml["market_dict"].get("yes_bid") else 0.7
             pqs = calculate_pick_quality(edge, "game", model_p, mq)
             if pqs < min_pqs:
@@ -363,6 +385,10 @@ def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, adva
             if edge is None or edge < min_edge:
                 continue
 
+            # Odds filter
+            if _odds_int(kp) < min_odds:
+                continue
+
             mq = 1.0 if sp["market_dict"].get("yes_bid") else 0.7
             pqs = calculate_pick_quality(edge, "game", model_p, mq)
             if pqs < min_pqs:
@@ -392,7 +418,7 @@ def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, adva
     return sorted(picks, key=lambda x: x["pqs"], reverse=True)
 
 
-def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs):
+def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs, min_odds=-1000):
     """Build list of qualified CBB game picks."""
     picks = []
     seen  = set()
@@ -438,6 +464,10 @@ def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs):
             if edge is None or edge < min_edge:
                 continue
 
+            # Odds filter: skip heavy favorites beyond user threshold
+            if _odds_int(kp) < min_odds:
+                continue
+
             pqs = calculate_pick_quality(edge, "game", model_p)
             if pqs < min_pqs:
                 continue
@@ -463,7 +493,7 @@ def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs):
     return sorted(picks, key=lambda x: x["pqs"], reverse=True)
 
 
-def _build_prop_picks(prop_markets, min_edge, min_pqs, prop_preset):
+def _build_prop_picks(prop_markets, min_edge, min_pqs, prop_preset, min_odds=-1000):
     """Build list of qualified NBA player prop picks from Kalshi markets."""
     parsed_props = discover_prop_markets(prop_markets)
     picks = []
@@ -503,6 +533,10 @@ def _build_prop_picks(prop_markets, min_edge, min_pqs, prop_preset):
         if edge < max(min_edge, threshold):
             continue
 
+        # Odds filter
+        if _odds_int(kp) < min_odds:
+            continue
+
         mq  = 1.0 if pp["market_dict"].get("yes_bid") else 0.7
         pqs = calculate_pick_quality(edge, stat_type, model_p, mq)
         if pqs < min_pqs:
@@ -537,20 +571,25 @@ min_edge_val = st.session_state["min_edge"]
 min_pqs_val  = st.session_state["min_pqs"]
 advanced     = st.session_state["advanced_mode"]
 
+min_odds_val = st.session_state.get("min_odds", -500)
+
 if sport == "NBA":
     game_picks = _build_nba_game_picks(
         games, kalshi_events, nba_weights,
         min_edge_val, min_pqs_val, advanced,
         injuries=injuries_data,
+        min_odds=min_odds_val,
     )
     prop_picks = _build_prop_picks(
         prop_markets, min_edge_val, min_pqs_val,
         st.session_state.get("prop_preset", "recommended"),
+        min_odds=min_odds_val,
     )
 else:
     game_picks = _build_cbb_game_picks(
         games, kalshi_events, cbb_weights,
         min_edge_val, min_pqs_val,
+        min_odds=min_odds_val,
     )
     prop_picks = []
 

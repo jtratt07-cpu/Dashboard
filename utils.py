@@ -4,6 +4,7 @@ No Streamlit imports. No API calls. Pure data and logic.
 """
 import re
 import math
+import unicodedata
 from datetime import datetime, timedelta, timezone
 
 # ── Kalshi API base ───────────────────────────────────────────────────────────
@@ -174,11 +175,11 @@ NBA_PLAYER_STATS = {
     "Jayson Tatum":            {"pts":28.9,"reb":8.3, "ast":4.8, "pra":42.0,"pts_l5":29.5,"reb_l5":8.1, "ast_l5":4.9, "pra_l5":42.5,"min":36.1,"usage":31.2,"3pa":7.4, "3pct":0.381,"3pm":2.8,"blk":0.7,"stl":1.1,"pos":"F","team":"Boston Celtics"},
     "LeBron James":            {"pts":22.8,"reb":7.6, "ast":8.2, "pra":38.6,"pts_l5":23.4,"reb_l5":7.8, "ast_l5":8.0, "pra_l5":39.2,"min":34.2,"usage":29.4,"3pa":5.1, "3pct":0.362,"3pm":1.8,"blk":0.6,"stl":1.3,"pos":"F","team":"Los Angeles Lakers"},
     "Stephen Curry":           {"pts":26.4,"reb":4.8, "ast":6.1, "pra":37.3,"pts_l5":27.8,"reb_l5":4.5, "ast_l5":6.3, "pra_l5":38.6,"min":33.2,"usage":30.1,"3pa":11.2,"3pct":0.428,"3pm":4.8,"blk":0.2,"stl":0.9,"pos":"G","team":"Golden State Warriors"},
-    "Luka Doncic":             {"pts":31.2,"reb":8.7, "ast":8.5, "pra":48.4,"pts_l5":32.0,"reb_l5":8.4, "ast_l5":8.8, "pra_l5":49.2,"min":35.8,"usage":37.1,"3pa":8.4, "3pct":0.374,"3pm":3.1,"blk":0.5,"stl":1.4,"pos":"G","team":"Dallas Mavericks"},
+    "Luka Doncic":             {"pts":31.2,"reb":8.7, "ast":8.5, "pra":48.4,"pts_l5":32.0,"reb_l5":8.4, "ast_l5":8.8, "pra_l5":49.2,"min":35.8,"usage":37.1,"3pa":8.4, "3pct":0.374,"3pm":3.1,"blk":0.5,"stl":1.4,"pos":"G","team":"Los Angeles Lakers"},
     "Joel Embiid":             {"pts":26.2,"reb":11.4,"ast":5.6, "pra":43.2,"pts_l5":27.1,"reb_l5":11.8,"ast_l5":5.4, "pra_l5":44.3,"min":33.8,"usage":35.4,"3pa":3.8, "3pct":0.321,"3pm":1.2,"blk":1.6,"stl":1.0,"pos":"C","team":"Philadelphia 76ers"},
     "Tyrese Haliburton":       {"pts":18.9,"reb":4.2, "ast":11.8,"pra":34.9,"pts_l5":19.4,"reb_l5":4.0, "ast_l5":12.1,"pra_l5":35.5,"min":33.4,"usage":22.8,"3pa":6.2, "3pct":0.384,"3pm":2.4,"blk":0.3,"stl":1.2,"pos":"G","team":"Indiana Pacers"},
     "Anthony Edwards":         {"pts":27.8,"reb":5.4, "ast":5.1, "pra":38.3,"pts_l5":28.9,"reb_l5":5.2, "ast_l5":5.3, "pra_l5":39.4,"min":35.4,"usage":33.2,"3pa":8.1, "3pct":0.364,"3pm":2.9,"blk":0.6,"stl":1.4,"pos":"G","team":"Minnesota Timberwolves"},
-    "Kevin Durant":            {"pts":27.1,"reb":6.8, "ast":4.2, "pra":38.1,"pts_l5":27.8,"reb_l5":7.0, "ast_l5":4.1, "pra_l5":38.9,"min":36.2,"usage":31.8,"3pa":4.8, "3pct":0.388,"3pm":1.9,"blk":1.4,"stl":0.9,"pos":"F","team":"Phoenix Suns"},
+    "Kevin Durant":            {"pts":27.1,"reb":6.8, "ast":4.2, "pra":38.1,"pts_l5":27.8,"reb_l5":7.0, "ast_l5":4.1, "pra_l5":38.9,"min":36.2,"usage":31.8,"3pa":4.8, "3pct":0.388,"3pm":1.9,"blk":1.4,"stl":0.9,"pos":"F","team":"Houston Rockets"},
     "Damian Lillard":          {"pts":24.8,"reb":4.2, "ast":7.4, "pra":36.4,"pts_l5":25.4,"reb_l5":4.0, "ast_l5":7.6, "pra_l5":37.0,"min":34.8,"usage":31.0,"3pa":8.8, "3pct":0.374,"3pm":3.3,"blk":0.2,"stl":0.8,"pos":"G","team":"Milwaukee Bucks"},
     "Donovan Mitchell":        {"pts":26.2,"reb":4.8, "ast":4.9, "pra":35.9,"pts_l5":27.1,"reb_l5":4.6, "ast_l5":5.0, "pra_l5":36.7,"min":34.2,"usage":31.4,"3pa":6.8, "3pct":0.378,"3pm":2.6,"blk":0.4,"stl":1.8,"pos":"G","team":"Cleveland Cavaliers"},
     "Trae Young":              {"pts":23.4,"reb":3.4, "ast":11.2,"pra":38.0,"pts_l5":24.1,"reb_l5":3.2, "ast_l5":11.8,"pra_l5":39.1,"min":34.6,"usage":31.2,"3pa":7.2, "3pct":0.354,"3pm":2.5,"blk":0.2,"stl":0.9,"pos":"G","team":"Atlanta Hawks"},
@@ -210,7 +211,7 @@ NBA_PLAYER_STATS = {
     "Pascal Siakam":           {"pts":22.8,"reb":6.4, "ast":4.8, "pra":34.0,"pts_l5":23.4,"reb_l5":6.4, "ast_l5":4.9, "pra_l5":34.7,"min":34.8,"usage":27.8,"3pa":3.8, "3pct":0.334,"3pm":1.3,"blk":0.8,"stl":1.4,"pos":"F","team":"Indiana Pacers"},
     "Kawhi Leonard":           {"pts":22.4,"reb":6.8, "ast":3.8, "pra":33.0,"pts_l5":23.0,"reb_l5":6.8, "ast_l5":3.9, "pra_l5":33.7,"min":32.8,"usage":27.8,"3pa":4.2, "3pct":0.384,"3pm":1.6,"blk":0.8,"stl":1.6,"pos":"F","team":"Los Angeles Clippers"},
     "Lauri Markkanen":         {"pts":24.4,"reb":8.4, "ast":1.8, "pra":34.6,"pts_l5":25.0,"reb_l5":8.6, "ast_l5":1.8, "pra_l5":35.4,"min":33.8,"usage":27.4,"3pa":6.4, "3pct":0.388,"3pm":2.5,"blk":0.8,"stl":0.6,"pos":"F","team":"Utah Jazz"},
-    "Kristaps Porzingis":      {"pts":20.4,"reb":7.4, "ast":2.4, "pra":30.2,"pts_l5":21.0,"reb_l5":7.6, "ast_l5":2.4, "pra_l5":31.0,"min":31.8,"usage":24.8,"3pa":4.4, "3pct":0.364,"3pm":1.6,"blk":2.0,"stl":0.6,"pos":"C","team":"Boston Celtics"},
+    "Kristaps Porzingis":      {"pts":20.4,"reb":7.4, "ast":2.4, "pra":30.2,"pts_l5":21.0,"reb_l5":7.6, "ast_l5":2.4, "pra_l5":31.0,"min":31.8,"usage":24.8,"3pa":4.4, "3pct":0.364,"3pm":1.6,"blk":2.0,"stl":0.6,"pos":"C","team":"Golden State Warriors"},
     "Jrue Holiday":            {"pts":13.8,"reb":4.8, "ast":5.4, "pra":24.0,"pts_l5":14.2,"reb_l5":4.8, "ast_l5":5.5, "pra_l5":24.5,"min":33.4,"usage":17.8,"3pa":4.8, "3pct":0.388,"3pm":1.9,"blk":0.8,"stl":1.8,"pos":"G","team":"Boston Celtics"},
     "Derrick White":           {"pts":15.8,"reb":4.8, "ast":4.8, "pra":25.4,"pts_l5":16.2,"reb_l5":4.8, "ast_l5":4.9, "pra_l5":25.9,"min":33.8,"usage":19.8,"3pa":6.4, "3pct":0.398,"3pm":2.5,"blk":1.4,"stl":0.9,"pos":"G","team":"Boston Celtics"},
     "Immanuel Quickley":       {"pts":17.4,"reb":4.8, "ast":6.4, "pra":28.6,"pts_l5":18.0,"reb_l5":4.8, "ast_l5":6.6, "pra_l5":29.4,"min":32.8,"usage":22.8,"3pa":5.8, "3pct":0.368,"3pm":2.1,"blk":0.4,"stl":1.2,"pos":"G","team":"Toronto Raptors"},
@@ -219,6 +220,52 @@ NBA_PLAYER_STATS = {
     "Kyrie Irving":            {"pts":24.4,"reb":4.8, "ast":5.4, "pra":34.6,"pts_l5":25.0,"reb_l5":4.6, "ast_l5":5.6, "pra_l5":35.2,"min":34.4,"usage":30.8,"3pa":6.8, "3pct":0.394,"3pm":2.7,"blk":0.4,"stl":1.2,"pos":"G","team":"Dallas Mavericks"},
     "Brook Lopez":             {"pts":14.8,"reb":5.4, "ast":2.0, "pra":22.2,"pts_l5":15.2,"reb_l5":5.5, "ast_l5":2.0, "pra_l5":22.7,"min":28.8,"usage":18.8,"3pa":4.4, "3pct":0.374,"3pm":1.6,"blk":2.4,"stl":0.6,"pos":"C","team":"Milwaukee Bucks"},
     "Myles Turner":            {"pts":16.8,"reb":7.4, "ast":1.8, "pra":26.0,"pts_l5":17.2,"reb_l5":7.6, "ast_l5":1.8, "pra_l5":26.6,"min":30.4,"usage":20.8,"3pa":5.4, "3pct":0.388,"3pm":2.1,"blk":2.4,"stl":0.6,"pos":"C","team":"Indiana Pacers"},
+    # ── 2025-26 additions / transfers ─────────────────────────────────────────
+    # LAL (Luka trade additions)
+    "Austin Reaves":           {"pts":17.8,"reb":4.2, "ast":4.8, "pra":26.8,"pts_l5":18.4,"reb_l5":4.0, "ast_l5":4.9, "pra_l5":27.3,"min":33.4,"usage":22.4,"3pa":6.8, "3pct":0.392,"3pm":2.7,"blk":0.4,"stl":1.2,"pos":"G","team":"Los Angeles Lakers"},
+    "Deandre Ayton":           {"pts":16.8,"reb":9.8, "ast":1.6, "pra":28.2,"pts_l5":17.4,"reb_l5":10.1,"ast_l5":1.5, "pra_l5":29.0,"min":30.8,"usage":21.4,"3pa":0.4, "3pct":0.218,"3pm":0.1,"blk":1.4,"stl":0.8,"pos":"C","team":"Los Angeles Lakers"},
+    "Marcus Smart":            {"pts":10.8,"reb":3.8, "ast":6.4, "pra":21.0,"pts_l5":11.2,"reb_l5":3.6, "ast_l5":6.6, "pra_l5":21.4,"min":28.4,"usage":18.4,"3pa":4.2, "3pct":0.334,"3pm":1.4,"blk":0.4,"stl":1.6,"pos":"G","team":"Los Angeles Lakers"},
+    "Max Christie":            {"pts":11.8,"reb":3.4, "ast":2.2, "pra":17.4,"pts_l5":12.4,"reb_l5":3.2, "ast_l5":2.2, "pra_l5":17.8,"min":26.4,"usage":16.8,"3pa":5.4, "3pct":0.374,"3pm":2.0,"blk":0.4,"stl":0.8,"pos":"G","team":"Los Angeles Lakers"},
+    # MIN (Randle/DiVincenzo trade additions)
+    "Julius Randle":           {"pts":21.8,"reb":9.4, "ast":4.6, "pra":35.8,"pts_l5":22.4,"reb_l5":9.6, "ast_l5":4.8, "pra_l5":36.8,"min":33.8,"usage":27.4,"3pa":5.2, "3pct":0.342,"3pm":1.8,"blk":0.6,"stl":1.0,"pos":"F","team":"Minnesota Timberwolves"},
+    "Donte DiVincenzo":        {"pts":12.8,"reb":3.4, "ast":3.2, "pra":19.4,"pts_l5":13.4,"reb_l5":3.2, "ast_l5":3.4, "pra_l5":20.0,"min":28.8,"usage":18.4,"3pa":6.8, "3pct":0.388,"3pm":2.6,"blk":0.3,"stl":1.0,"pos":"G","team":"Minnesota Timberwolves"},
+    "Jaden McDaniels":         {"pts":17.4,"reb":4.8, "ast":2.4, "pra":24.6,"pts_l5":18.0,"reb_l5":5.0, "ast_l5":2.5, "pra_l5":25.5,"min":32.4,"usage":20.8,"3pa":5.4, "3pct":0.364,"3pm":2.0,"blk":1.2,"stl":1.2,"pos":"F","team":"Minnesota Timberwolves"},
+    # GSW
+    "Draymond Green":          {"pts":9.4, "reb":7.4, "ast":7.8, "pra":24.6,"pts_l5":9.8, "reb_l5":7.6, "ast_l5":8.0, "pra_l5":25.4,"min":30.4,"usage":14.8,"3pa":1.4, "3pct":0.288,"3pm":0.4,"blk":0.8,"stl":1.2,"pos":"F","team":"Golden State Warriors"},
+    "Al Horford":              {"pts":7.8, "reb":5.8, "ast":2.6, "pra":16.2,"pts_l5":8.0, "reb_l5":5.8, "ast_l5":2.6, "pra_l5":16.4,"min":25.4,"usage":12.4,"3pa":3.8, "3pct":0.348,"3pm":1.3,"blk":1.2,"stl":0.6,"pos":"C","team":"Golden State Warriors"},
+    # SAS
+    "Devin Vassell":           {"pts":20.2,"reb":4.4, "ast":3.8, "pra":28.4,"pts_l5":20.8,"reb_l5":4.4, "ast_l5":3.9, "pra_l5":29.1,"min":33.4,"usage":24.8,"3pa":6.4, "3pct":0.374,"3pm":2.4,"blk":0.6,"stl":1.2,"pos":"G","team":"San Antonio Spurs"},
+    "Stephon Castle":          {"pts":12.8,"reb":3.8, "ast":4.2, "pra":20.8,"pts_l5":13.4,"reb_l5":3.8, "ast_l5":4.4, "pra_l5":21.6,"min":28.4,"usage":18.4,"3pa":3.8, "3pct":0.344,"3pm":1.3,"blk":0.4,"stl":1.2,"pos":"G","team":"San Antonio Spurs"},
+    "Dylan Harper":            {"pts":14.2,"reb":3.4, "ast":5.2, "pra":22.8,"pts_l5":14.8,"reb_l5":3.4, "ast_l5":5.4, "pra_l5":23.6,"min":29.8,"usage":20.4,"3pa":3.4, "3pct":0.334,"3pm":1.1,"blk":0.4,"stl":1.0,"pos":"G","team":"San Antonio Spurs"},
+    "Neemias Queta":           {"pts":8.4, "reb":6.8, "ast":1.4, "pra":16.6,"pts_l5":8.8, "reb_l5":7.0, "ast_l5":1.4, "pra_l5":17.2,"min":21.8,"usage":12.8,"3pa":0.2, "3pct":0.178,"3pm":0.0,"blk":1.8,"stl":0.4,"pos":"C","team":"Boston Celtics"},
+    # DAL
+    "Cooper Flagg":            {"pts":15.4,"reb":7.2, "ast":4.4, "pra":27.0,"pts_l5":16.2,"reb_l5":7.4, "ast_l5":4.6, "pra_l5":28.2,"min":30.8,"usage":20.4,"3pa":4.8, "3pct":0.338,"3pm":1.6,"blk":1.4,"stl":1.6,"pos":"F","team":"Dallas Mavericks"},
+    "Daniel Gafford":          {"pts":13.4,"reb":7.8, "ast":1.4, "pra":22.6,"pts_l5":13.8,"reb_l5":8.0, "ast_l5":1.4, "pra_l5":23.2,"min":26.8,"usage":16.8,"3pa":0.2, "3pct":0.188,"3pm":0.0,"blk":2.2,"stl":0.8,"pos":"C","team":"Dallas Mavericks"},
+    "P.J. Washington":         {"pts":14.8,"reb":6.4, "ast":2.4, "pra":23.6,"pts_l5":15.2,"reb_l5":6.6, "ast_l5":2.4, "pra_l5":24.2,"min":30.4,"usage":18.4,"3pa":5.8, "3pct":0.354,"3pm":2.0,"blk":1.0,"stl":0.8,"pos":"F","team":"Dallas Mavericks"},
+    "Naji Marshall":           {"pts":9.8, "reb":4.2, "ast":2.8, "pra":16.8,"pts_l5":10.2,"reb_l5":4.2, "ast_l5":2.8, "pra_l5":17.2,"min":24.4,"usage":14.8,"3pa":4.4, "3pct":0.354,"3pm":1.6,"blk":0.4,"stl":1.0,"pos":"F","team":"Dallas Mavericks"},
+    # ATL
+    "Jalen Johnson":           {"pts":20.8,"reb":8.2, "ast":5.8, "pra":34.8,"pts_l5":21.4,"reb_l5":8.4, "ast_l5":6.0, "pra_l5":35.8,"min":33.4,"usage":24.8,"3pa":3.4, "3pct":0.318,"3pm":1.1,"blk":0.8,"stl":1.4,"pos":"F","team":"Atlanta Hawks"},
+    "Dyson Daniels":           {"pts":14.2,"reb":4.8, "ast":4.4, "pra":23.4,"pts_l5":14.8,"reb_l5":4.8, "ast_l5":4.6, "pra_l5":24.2,"min":31.4,"usage":18.4,"3pa":4.8, "3pct":0.348,"3pm":1.7,"blk":0.4,"stl":2.2,"pos":"G","team":"Atlanta Hawks"},
+    "Onyeka Okongwu":          {"pts":16.4,"reb":8.8, "ast":3.0, "pra":28.2,"pts_l5":16.8,"reb_l5":9.0, "ast_l5":3.0, "pra_l5":28.8,"min":29.8,"usage":20.4,"3pa":0.4, "3pct":0.228,"3pm":0.1,"blk":1.6,"stl":1.0,"pos":"C","team":"Atlanta Hawks"},
+    "Nickeil Alexander-Walker": {"pts":14.4,"reb":3.4, "ast":4.2, "pra":22.0,"pts_l5":14.8,"reb_l5":3.4, "ast_l5":4.4, "pra_l5":22.6,"min":28.8,"usage":18.8,"3pa":5.8, "3pct":0.364,"3pm":2.1,"blk":0.4,"stl":1.2,"pos":"G","team":"Dallas Mavericks"},
+    # HOU
+    "Jabari Smith Jr.":        {"pts":16.8,"reb":7.4, "ast":2.2, "pra":26.4,"pts_l5":17.4,"reb_l5":7.6, "ast_l5":2.2, "pra_l5":27.2,"min":31.4,"usage":20.8,"3pa":5.8, "3pct":0.368,"3pm":2.1,"blk":1.4,"stl":0.8,"pos":"F","team":"Houston Rockets"},
+    "Amen Thompson":           {"pts":18.4,"reb":8.8, "ast":5.4, "pra":32.6,"pts_l5":19.0,"reb_l5":9.0, "ast_l5":5.6, "pra_l5":33.6,"min":32.4,"usage":22.4,"3pa":2.4, "3pct":0.298,"3pm":0.7,"blk":0.8,"stl":1.6,"pos":"F","team":"Houston Rockets"},
+    "Tari Eason":              {"pts":13.8,"reb":5.8, "ast":2.4, "pra":22.0,"pts_l5":14.2,"reb_l5":6.0, "ast_l5":2.4, "pra_l5":22.6,"min":28.4,"usage":17.8,"3pa":3.4, "3pct":0.338,"3pm":1.1,"blk":1.0,"stl":1.4,"pos":"F","team":"Houston Rockets"},
+    "Reed Sheppard":           {"pts":13.4,"reb":3.4, "ast":4.8, "pra":21.6,"pts_l5":13.8,"reb_l5":3.4, "ast_l5":5.0, "pra_l5":22.2,"min":28.4,"usage":17.8,"3pa":6.4, "3pct":0.404,"3pm":2.6,"blk":0.2,"stl":1.2,"pos":"G","team":"Houston Rockets"},
+    # SAC / IND cross-overs
+    "DeMar DeRozan":           {"pts":20.4,"reb":4.4, "ast":4.2, "pra":29.0,"pts_l5":21.0,"reb_l5":4.4, "ast_l5":4.2, "pra_l5":29.6,"min":32.8,"usage":26.4,"3pa":1.4, "3pct":0.274,"3pm":0.4,"blk":0.4,"stl":1.0,"pos":"G","team":"Sacramento Kings"},
+    "Precious Achiuwa":        {"pts":11.4,"reb":8.2, "ast":1.8, "pra":21.4,"pts_l5":11.8,"reb_l5":8.4, "ast_l5":1.8, "pra_l5":22.0,"min":24.8,"usage":14.8,"3pa":0.6, "3pct":0.218,"3pm":0.1,"blk":1.2,"stl":0.6,"pos":"C","team":"Indiana Pacers"},
+    "Aaron Nesmith":           {"pts":13.8,"reb":4.2, "ast":2.4, "pra":20.4,"pts_l5":14.2,"reb_l5":4.2, "ast_l5":2.4, "pra_l5":20.8,"min":28.4,"usage":17.4,"3pa":5.4, "3pct":0.354,"3pm":1.9,"blk":0.4,"stl":1.0,"pos":"F","team":"Indiana Pacers"},
+    "Russell Westbrook":       {"pts":8.4, "reb":4.4, "ast":5.8, "pra":18.6,"pts_l5":8.8, "reb_l5":4.4, "ast_l5":6.0, "pra_l5":19.2,"min":20.8,"usage":16.4,"3pa":2.8, "3pct":0.288,"3pm":0.8,"blk":0.2,"stl":1.0,"pos":"G","team":"Sacramento Kings"},
+    # CHI
+    "Isaac Okoro":             {"pts":11.2,"reb":3.4, "ast":2.8, "pra":17.4,"pts_l5":11.6,"reb_l5":3.4, "ast_l5":2.8, "pra_l5":17.8,"min":27.4,"usage":14.8,"3pa":4.4, "3pct":0.328,"3pm":1.4,"blk":0.6,"stl":1.4,"pos":"F","team":"Chicago Bulls"},
+    # TOR
+    "RJ Barrett":              {"pts":21.4,"reb":5.8, "ast":4.4, "pra":31.6,"pts_l5":22.0,"reb_l5":5.8, "ast_l5":4.4, "pra_l5":32.2,"min":33.8,"usage":25.8,"3pa":5.4, "3pct":0.354,"3pm":1.9,"blk":0.6,"stl":1.0,"pos":"F","team":"Toronto Raptors"},
+    "Jakob Poeltl":            {"pts":12.8,"reb":9.4, "ast":3.2, "pra":25.4,"pts_l5":13.2,"reb_l5":9.6, "ast_l5":3.2, "pra_l5":26.0,"min":26.8,"usage":16.8,"3pa":0.2, "3pct":0.188,"3pm":0.0,"blk":2.2,"stl":0.8,"pos":"C","team":"Toronto Raptors"},
+    "Sam Hauser":              {"pts":12.8,"reb":3.8, "ast":2.2, "pra":18.8,"pts_l5":13.2,"reb_l5":3.8, "ast_l5":2.2, "pra_l5":19.2,"min":26.4,"usage":16.4,"3pa":7.4, "3pct":0.424,"3pm":3.1,"blk":0.2,"stl":0.6,"pos":"F","team":"Boston Celtics"},
+    # CJ McCollum likely with DAL or elsewhere
+    "CJ McCollum":             {"pts":17.8,"reb":3.8, "ast":5.4, "pra":27.0,"pts_l5":18.2,"reb_l5":3.8, "ast_l5":5.6, "pra_l5":27.6,"min":31.4,"usage":23.8,"3pa":7.4, "3pct":0.394,"3pm":2.9,"blk":0.4,"stl":0.8,"pos":"G","team":"Dallas Mavericks"},
 }
 
 # ── Time helpers ──────────────────────────────────────────────────────────────
@@ -314,25 +361,39 @@ def find_cbb_team(name: str):
     return name, {"eff_margin": 8.0, "adj_o": 110.0, "adj_d": 102.0,
                   "efg": 0.480, "to_rate": 0.190, "exp": 0.75, "seed": None}
 
+def _strip_accents(s: str) -> str:
+    """Normalize unicode and strip accent characters (e.g. Dončić → Doncic)."""
+    return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("ascii")
+
 def find_nba_player(name: str):
     """Fuzzy match player name to NBA_PLAYER_STATS. Returns stats dict or None."""
     if not name:
         return None
-    nl = name.lower().strip()
+    nl  = name.lower().strip()
+    nla = _strip_accents(nl)   # accent-stripped version for fallback matching
     # Exact
     for key, stats in NBA_PLAYER_STATS.items():
         if key.lower() == nl:
+            return {**stats, "name": key}
+    # Exact accent-stripped
+    for key, stats in NBA_PLAYER_STATS.items():
+        if _strip_accents(key.lower()) == nla:
             return {**stats, "name": key}
     # Substring
     for key, stats in NBA_PLAYER_STATS.items():
         kl = key.lower()
         if nl in kl or kl in nl:
             return {**stats, "name": key}
-    # Last-name match
-    nl_parts = nl.split()
+    # Substring accent-stripped
+    for key, stats in NBA_PLAYER_STATS.items():
+        kla = _strip_accents(key.lower())
+        if nla in kla or kla in nla:
+            return {**stats, "name": key}
+    # Last-name match (accent-stripped)
+    nl_parts = nla.split()
     if nl_parts:
         last = nl_parts[-1]
         for key, stats in NBA_PLAYER_STATS.items():
-            if key.lower().split()[-1] == last:
+            if _strip_accents(key.lower()).split()[-1] == last:
                 return {**stats, "name": key}
     return None
