@@ -19,7 +19,7 @@ from kalshi_layer import (
 from model_layer import (
     nba_game_model, nba_cover_prob, cbb_game_model, prop_model,
     calculate_edge, calculate_pick_quality, pick_passes_threshold,
-    get_game_reasoning, get_cbb_reasoning, get_prop_reasoning,
+    get_game_reasoning, get_spread_reasoning, get_cbb_reasoning, get_prop_reasoning,
     NBA_GAME_PRESETS, CBB_GAME_PRESETS, PROP_PRESETS,
     normalize_weights, get_preset_weights,
 )
@@ -368,7 +368,7 @@ def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, adva
             if pqs < min_pqs:
                 continue
 
-            bullets = get_game_reasoning(result, home, away)
+            bullets = get_spread_reasoning(result, home, away, team, line, model_p, kp)
             picks.append({
                 "sport":          "NBA",
                 "home":           home,

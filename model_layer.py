@@ -516,34 +516,87 @@ def prop_model(
 # Reasoning Bullet Generator
 # ─────────────────────────────────────────────────────────────────────────────
 def get_game_reasoning(result: dict, home: str, away: str, kalshi_prob: float | None = None) -> list:
-    """Generate 2-3 reasoning bullets for an NBA game pick."""
+    """Generate 2-3 reasoning bullets for an NBA moneyline pick."""
     bullets = []
     hn  = result.get("home_net", 0)
     an  = result.get("away_net", 0)
-    gap = round(hn - an, 1)
-
     home_nick = home.split()[-1]
     away_nick = away.split()[-1]
 
-    if gap > 0:
-        bullets.append(f"{home_nick} net rating +{abs(gap):.1f} pts better than {away_nick}")
+    # Bullet 1: Actual net rating numbers — concrete, not just the gap
+    if hn >= an:
+        bullets.append(
+            f"{home_nick} net rating {hn:+.1f} vs {away_nick} {an:+.1f} "
+            f"({abs(hn - an):.1f} pt gap)"
+        )
     else:
-        bullets.append(f"{away_nick} net rating +{abs(gap):.1f} pts better than {home_nick}")
+        bullets.append(
+            f"{away_nick} net rating {an:+.1f} vs {home_nick} {hn:+.1f} "
+            f"({abs(hn - an):.1f} pt gap)"
+        )
 
+    # Bullet 2: Model projected margin
     margin = result.get("expected_margin")
     if margin is not None:
         dir_team = home_nick if margin > 0 else away_nick
-        bullets.append(f"Model projects {dir_team} by {abs(margin):.1f} pts (home court included)")
+        bullets.append(f"Model projects {dir_team} by {abs(margin):.1f} pts (includes home court)")
 
+    # Bullet 3: Why market is mispriced
     if kalshi_prob is not None:
         model_prob = result.get("home_prob") or result.get("away_prob")
         if model_prob:
-            # Determine which team is the pick
-            if model_prob == result.get("away_prob"):
-                pick_nick = away_nick
-            else:
-                pick_nick = home_nick
-            bullets.append(f"Market prices {pick_nick} at {kalshi_prob*100:.0f}% — our model says {model_prob*100:.0f}%")
+            pick_nick = away_nick if model_prob == result.get("away_prob") else home_nick
+            edge = round((model_prob - kalshi_prob) * 100, 0)
+            bullets.append(
+                f"Market prices {pick_nick} at {kalshi_prob*100:.0f}% — "
+                f"net ratings imply {model_prob*100:.0f}% ({edge:+.0f}% gap)"
+            )
+
+    return bullets[:3]
+
+
+def get_spread_reasoning(
+    result: dict, home: str, away: str,
+    team: str, line: float, model_p: float,
+    kalshi_prob: float | None = None,
+) -> list:
+    """Generate reasoning bullets for a spread pick."""
+    bullets = []
+    hn = result.get("home_net", 0)
+    an = result.get("away_net", 0)
+    home_nick = home.split()[-1]
+    away_nick = away.split()[-1]
+    team_nick = team.split()[-1]
+
+    # Bullet 1: Model margin vs line — core of the value case
+    margin = result.get("expected_margin")
+    if margin is not None:
+        team_margin = margin if team == home else -margin
+        cover_by = team_margin - line
+        if cover_by > 0:
+            bullets.append(
+                f"Model margin: {team_nick} {team_margin:+.1f} pts — "
+                f"covers {line:+.1f} by {cover_by:.1f} pts in expectation"
+            )
+        else:
+            bullets.append(
+                f"Model margin: {team_nick} {team_margin:+.1f} pts vs line {line:+.1f} — "
+                f"still a value play vs market price"
+            )
+
+    # Bullet 2: Raw net ratings
+    if hn >= an:
+        bullets.append(f"{home_nick} net rating {hn:+.1f} vs {away_nick} {an:+.1f}")
+    else:
+        bullets.append(f"{away_nick} net rating {an:+.1f} vs {home_nick} {hn:+.1f}")
+
+    # Bullet 3: Market mispricing
+    if kalshi_prob is not None:
+        edge = round((model_p - kalshi_prob) * 100, 0)
+        bullets.append(
+            f"Market prices cover at {kalshi_prob*100:.0f}% — "
+            f"model says {model_p*100:.0f}% ({edge:+.0f}% gap)"
+        )
 
     return bullets[:3]
 

@@ -207,7 +207,19 @@ def _get_nba_prop_markets_inner() -> list:
                 markets.append(m)
 
     # Try known prop series tickers (individual over/under format)
-    for series in ["KXNBAPROP", "KXNBA3D", "KXNBAPRA"]:
+    # KXNBAPTS/KXNBAREB/KXNBAAST use "Player: N+ stat" format (live today)
+    # KXNBAPROP/KXNBA3D/KXNBAPRA use "NBA: Player — Over N Stat" format (less common)
+    for series in [
+        "KXNBAPTS",   # Player Points  — e.g. "Deandre Ayton: 10+ points"
+        "KXNBAREB",   # Player Rebounds — e.g. "Rudy Gobert: 14+ rebounds"
+        "KXNBAAST",   # Player Assists  — e.g. "LeBron James: 7+ assists"
+        "KXNBA3PM",   # 3-Pointers Made (when available)
+        "KXNBABLK",   # Blocks (when available)
+        "KXNBASTL",   # Steals (when available)
+        "KXNBAPROP",  # Legacy individual props
+        "KXNBA3D",    # Legacy 3-point props
+        "KXNBAPRA",   # Legacy PRA props
+    ]:
         evs = get_kalshi_events(series)
         for ev in evs:
             tks = ev.get("event_ticker", ev.get("ticker", ""))

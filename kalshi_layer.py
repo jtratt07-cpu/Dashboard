@@ -93,10 +93,43 @@ def parse_prop_market(title: str) -> dict | None:
     Returns dict: {player, stat_type, line, over_under, raw_title}
     Returns None if parsing fails or is ambiguous.
 
+    Handles two formats:
+      Old: "NBA: Player Name — Over N.N Stat"
+      New: "Player Name: N+ stat"   (e.g., "Deandre Ayton: 10+ points")
+
     Defensive: skip rather than return wrong data.
     """
     t = (title or "").strip()
     tl = t.lower()
+
+    # ── New Kalshi format: "Player: N+ stat" (plus = over implied) ───────────
+    # e.g. "Deandre Ayton: 10+ points" or "Rudy Gobert: 14.5+ rebounds"
+    if "+" in t and ":" in t and not re.search(r'\bover\b|\bunder\b', tl):
+        new_fmt = re.match(r'^(.+?):\s+(\d+\.?\d*)\+\s+(.+)$', t, re.IGNORECASE)
+        if new_fmt:
+            player_raw = new_fmt.group(1).strip()
+            try:
+                line = float(new_fmt.group(2))
+            except ValueError:
+                return None
+            stat_raw = new_fmt.group(3).strip()
+            over_under = "over"
+            stat_type = None
+            for pattern, stype in _STAT_PATTERNS:
+                if re.search(pattern, stat_raw.lower()):
+                    stat_type = stype
+                    break
+            if stat_type is None or not player_raw or len(player_raw) < 3:
+                return None
+            if re.search(r'\d', player_raw) or len(player_raw) > 40:
+                return None
+            return {
+                "player":     player_raw,
+                "stat_type":  stat_type,
+                "line":       line,
+                "over_under": over_under,
+                "raw_title":  t,
+            }
 
     # ── Extract over/under direction ──────────────────────────────────────────
     if "over" in tl:
