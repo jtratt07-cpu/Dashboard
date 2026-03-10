@@ -27,7 +27,7 @@ from ui_layer import (
     APP_CSS, render_game_pick_card, render_prop_pick_card,
     render_market_section, render_score_row, render_no_picks,
     render_nba_net_ratings, render_cbb_ratings, render_player_stats_table,
-    render_model_editor, build_market_table,
+    render_model_editor, build_market_table, render_matchup_breakdown,
 )
 
 # ── Inline helpers (avoids import-cache issues on Streamlit Cloud) ─────────
@@ -53,19 +53,36 @@ def render_model_game_row(game: dict, result: dict, sport: str = "NBA") -> None:
         unsafe_allow_html=True,
     )
 
-def render_player_projections_table(games: list) -> None:
+def render_player_projections_table(games: list, injuries: dict = None) -> None:
     """Show season-average projections for players on tonight's NBA teams."""
     from utils import NBA_PLAYER_STATS
     tonight_teams: set = set()
     for g in games:
         if g.get("home"): tonight_teams.add(g["home"])
         if g.get("away"): tonight_teams.add(g["away"])
+    # Build injury lookup
+    inj_lookup: dict = {}
+    if injuries:
+        for team_inj_list in injuries.values():
+            for inj in team_inj_list:
+                pname = inj.get("player", "").lower()
+                status = inj.get("status", "")
+                icon = "❌" if status == "Out" else "⚠️"
+                inj_lookup[pname] = f"{icon} {status}"
     rows = []
     for name, s in NBA_PLAYER_STATS.items():
         if s.get("team", "") not in tonight_teams:
             continue
+        name_lower = name.lower()
+        status_str = inj_lookup.get(name_lower, "")
+        if not status_str:
+            for iname, istatus in inj_lookup.items():
+                if iname in name_lower or name_lower in iname:
+                    status_str = istatus
+                    break
         rows.append({
             "Player": name, "Team": s.get("team","").split()[-1],
+            "Status": status_str or "Active",
             "PRA": s.get("pra","—"), "Points": s.get("pts","—"),
             "Rebounds": s.get("reb","—"), "Assists": s.get("ast","—"),
             "3-Pointers": s.get("3pm","—"),
@@ -195,6 +212,7 @@ games         = day_data.get("games", [])
 espn_err      = day_data.get("espn_error")
 kalshi_events = day_data.get("kalshi_events", [])
 prop_markets  = day_data.get("prop_markets", [])   # only for NBA
+injuries_data = day_data.get("injuries", {})        # NBA only; {} for CBB
 
 # Active model weights (from session state presets)
 nba_weights  = normalize_weights(get_preset_weights("nba_game", st.session_state.get("nba_preset","recommended")))
@@ -204,7 +222,7 @@ prop_weights = {}   # resolved per stat type below
 # ─────────────────────────────────────────────────────────────────────────────
 # Build picks — all model computation before rendering
 # ─────────────────────────────────────────────────────────────────────────────
-def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, advanced):
+def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, advanced, injuries=None):
     """Build list of qualified NBA game picks."""
     picks = []
     seen_matchups = set()
@@ -274,6 +292,8 @@ def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, adva
                 "confidence":     result.get("confidence"),
                 "reasoning":      bullets,
                 "model_result":   result,
+                "injuries_home":  (injuries or {}).get(home, []),
+                "injuries_away":  (injuries or {}).get(away, []),
             })
 
         # Spread picks (first qualifying spread)
@@ -314,6 +334,8 @@ def _build_nba_game_picks(games, kalshi_events, weights, min_edge, min_pqs, adva
                 "confidence":     result.get("confidence"),
                 "reasoning":      bullets,
                 "model_result":   result,
+                "injuries_home":  (injuries or {}).get(home, []),
+                "injuries_away":  (injuries or {}).get(away, []),
             })
 
     # Sort: PQS descending
@@ -469,6 +491,7 @@ if sport == "NBA":
     game_picks = _build_nba_game_picks(
         games, kalshi_events, nba_weights,
         min_edge_val, min_pqs_val, advanced,
+        injuries=injuries_data,
     )
     prop_picks = _build_prop_picks(
         prop_markets, min_edge_val, min_pqs_val,
@@ -509,8 +532,10 @@ with tabs[0]:
                 result = cbb_game_model(home, away, cbb_weights)
             if result.get("valid"):
                 render_model_game_row(game, result, sport)
+        render_matchup_breakdown(games, injuries_data)
     elif not game_picks:
         render_no_picks()
+        render_matchup_breakdown(games, injuries_data)
 
         # In advanced mode, show all games with model lines even without edge
         if advanced:
@@ -546,6 +571,9 @@ with tabs[0]:
         )
         for pick in game_picks:
             render_game_pick_card(pick, advanced=advanced)
+
+        # Injury report — always visible below picks
+        render_matchup_breakdown(games, injuries_data)
 
         # Full market view (advanced)
         if advanced:
@@ -620,7 +648,7 @@ with tabs[1]:
         st.info("No Kalshi player prop markets available today.")
         st.markdown("#### Tonight's Player Projections")
         st.caption("Model estimates based on season averages for players in tonight's games. No market comparison available.")
-        render_player_projections_table(games)
+        render_player_projections_table(games, injuries=injuries_data)
     elif not prop_picks:
         render_no_picks(
             "No props with sufficient edge today. "
@@ -629,7 +657,7 @@ with tabs[1]:
         )
         st.markdown("#### Tonight's Player Projections")
         st.caption("Model estimates based on season averages.")
-        render_player_projections_table(games)
+        render_player_projections_table(games, injuries=injuries_data)
     else:
         stat_labels = {
             "pra":"PRA","points":"Points","rebounds":"Rebounds","assists":"Assists",

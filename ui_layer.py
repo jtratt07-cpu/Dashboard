@@ -125,6 +125,26 @@ def _prob_row_html(model_p: float, kalshi_p: float) -> str:
     )
 
 
+def _injury_html(injuries: list) -> str:
+    """Render compact injury notes for a pick card. injuries = filtered list for one team."""
+    if not injuries:
+        return ""
+    parts = []
+    for inj in injuries[:4]:  # cap at 4 to keep cards compact
+        icon   = "❌" if inj["status"] == "Out" else "⚠️"
+        detail = inj.get("detail", "")
+        side   = inj.get("side", "")
+        loc    = f"{side} {detail}".strip() if side else detail
+        parts.append(f"{icon} <b>{inj['player']}</b> — {inj['status']}{', ' + loc if loc else ''}")
+    items = "".join(f"<li>{p}</li>" for p in parts)
+    return (
+        f'<div class="reasoning" style="margin-top:6px;">'
+        f'<div style="font-size:.72rem;font-weight:700;color:#58a6ff;text-transform:uppercase;'
+        f'letter-spacing:.07em;margin-bottom:3px;">Injury Report</div>'
+        f"<ul>{items}</ul></div>"
+    )
+
+
 def render_game_pick_card(pick: dict, advanced: bool = False) -> None:
     """
     Render a single game pick card.
@@ -133,7 +153,8 @@ def render_game_pick_card(pick: dict, advanced: bool = False) -> None:
       sport, home, away, time_et, pick_team, pick_direction,
       model_prob, kalshi_prob, edge_pct, pqs, confidence,
       reasoning (list[str]), model_result (full result dict),
-      market_type (moneyline/spread/total)
+      market_type (moneyline/spread/total),
+      injuries_home, injuries_away (optional, lists of injury dicts)
     """
     pqs       = pick.get("pqs", 0)
     edge_pct  = pick.get("edge_pct")
@@ -158,6 +179,12 @@ def render_game_pick_card(pick: dict, advanced: bool = False) -> None:
     if model_p is not None and kalshi_p is not None:
         prob_row = _prob_row_html(model_p, kalshi_p)
 
+    # Injuries: show both teams combined (picked team first)
+    inj_home = pick.get("injuries_home", [])
+    inj_away = pick.get("injuries_away", [])
+    all_injuries = inj_home + inj_away
+    injury_block = _injury_html(all_injuries)
+
     html = f"""
     <div class="{_card_class(pqs)}">
       <div class="card-header">{header}</div>
@@ -165,6 +192,7 @@ def render_game_pick_card(pick: dict, advanced: bool = False) -> None:
       <div class="card-meta">{badges}</div>
       {prob_row}
       {_reasoning_html(reasoning)}
+      {injury_block}
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
@@ -278,10 +306,10 @@ def render_model_game_row(game: dict, result: dict, sport: str = "NBA") -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Player projections table (Props tab fallback)
 # ─────────────────────────────────────────────────────────────────────────────
-def render_player_projections_table(games: list) -> None:
+def render_player_projections_table(games: list, injuries: dict = None) -> None:
     """
     Show model season-average projections for players on tonight's NBA teams.
-    Used when no Kalshi prop markets are available.
+    injuries: optional dict {team_name: [{"player", "status", ...}]} from ESPN.
     """
     from utils import NBA_PLAYER_STATS
     import pandas as pd
@@ -293,14 +321,33 @@ def render_player_projections_table(games: list) -> None:
         if g.get("away"):
             tonight_teams.add(g["away"])
 
+    # Build a fast name→status lookup from the injuries dict
+    inj_lookup: dict = {}   # lowercase player name → "❌ Out" or "⚠️ GTD"
+    if injuries:
+        for team_inj_list in injuries.values():
+            for inj in team_inj_list:
+                pname = inj.get("player", "").lower()
+                status = inj.get("status", "")
+                icon = "❌" if status == "Out" else "⚠️"
+                inj_lookup[pname] = f"{icon} {status}"
+
     rows = []
     for name, s in NBA_PLAYER_STATS.items():
         team = s.get("team", "")
         if team not in tonight_teams:
             continue
+        # Fuzzy match injury: check if player name appears in lookup
+        name_lower = name.lower()
+        status_str = inj_lookup.get(name_lower, "")
+        if not status_str:
+            for iname, istatus in inj_lookup.items():
+                if iname in name_lower or name_lower in iname:
+                    status_str = istatus
+                    break
         rows.append({
             "Player":     name,
             "Team":       team.split()[-1],
+            "Status":     status_str or "Active",
             "PRA":        s.get("pra", "—"),
             "Points":     s.get("pts", "—"),
             "Rebounds":   s.get("reb", "—"),
@@ -314,6 +361,65 @@ def render_player_projections_table(games: list) -> None:
 
     df = pd.DataFrame(rows).sort_values("PRA", ascending=False)
     st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Matchup breakdown — injury report per game
+# ─────────────────────────────────────────────────────────────────────────────
+
+def render_matchup_breakdown(games: list, injuries: dict) -> None:
+    """
+    Show per-game injury report for tonight's matchups.
+    Only renders if at least one game has reported injuries.
+    injuries: {team_display_name: [{"player", "status", "detail", "side", "position"}]}
+    """
+    if not games or not injuries:
+        return
+
+    # Filter to only games that have at least one injured player
+    games_with_inj = []
+    for game in games:
+        home_inj = injuries.get(game.get("home", ""), [])
+        away_inj = injuries.get(game.get("away", ""), [])
+        if home_inj or away_inj:
+            games_with_inj.append(game)
+
+    if not games_with_inj:
+        return
+
+    st.markdown("---")
+    st.markdown("#### 🏥 Tonight's Injury Report")
+    st.caption("Source: ESPN · Updates every 10 minutes")
+
+    for game in games_with_inj:
+        home     = game.get("home", "?")
+        away     = game.get("away", "?")
+        home_nick = home.split()[-1]
+        away_nick = away.split()[-1]
+        home_inj = injuries.get(home, [])
+        away_inj = injuries.get(away, [])
+
+        with st.expander(f"{away_nick} @ {home_nick}  ·  {game.get('time_et', '')}"):
+            col_away, col_home = st.columns(2)
+
+            for col, nick, inj_list in [
+                (col_away, away_nick, away_inj),
+                (col_home, home_nick, home_inj),
+            ]:
+                with col:
+                    st.markdown(f"**{nick}**")
+                    if not inj_list:
+                        st.caption("No reported injuries")
+                    else:
+                        for inj in inj_list:
+                            status = inj["status"]
+                            icon   = "❌" if status == "Out" else ("⚠️" if status == "Day-To-Day" else "🔴")
+                            detail = inj.get("detail", "")
+                            side   = inj.get("side", "")
+                            loc    = f"{side} {detail}".strip() if side else detail
+                            pos    = inj.get("position", "")
+                            pos_str = f" ({pos})" if pos else ""
+                            st.markdown(f"{icon} **{inj['player']}**{pos_str}  \n&nbsp;&nbsp;{status}{', ' + loc if loc else ''}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

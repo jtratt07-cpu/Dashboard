@@ -227,21 +227,65 @@ def get_nba_prop_markets() -> list:
 # Convenience: load all data for a given sport day
 # ─────────────────────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=600, show_spinner=False)
+def get_nba_injuries() -> dict:
+    """
+    Fetch NBA injury report from ESPN's public injuries endpoint.
+    Returns dict: {team_display_name: [{"player", "status", "position", "detail", "side", "comment"}]}
+    Status values: "Out", "Day-To-Day", "Suspension"
+    Single call covers all 30 teams — fast and cacheable.
+    """
+    url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries"
+    try:
+        r = requests.get(url, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+    except Exception:
+        return {}
+
+    result = {}
+    for team_entry in data.get("injuries", []):
+        team_name = team_entry.get("team", {}).get("displayName", "")
+        if not team_name:
+            continue
+        team_inj = []
+        for inj in team_entry.get("injuries", []):
+            status = inj.get("status", "")
+            if status not in ("Out", "Day-To-Day", "Suspension"):
+                continue
+            athlete = inj.get("athlete", {})
+            details = inj.get("details", {})
+            side    = details.get("side", "")
+            team_inj.append({
+                "player":   athlete.get("displayName", ""),
+                "status":   status,
+                "position": athlete.get("position", {}).get("abbreviation", ""),
+                "detail":   details.get("type", ""),
+                "side":     "" if side in ("Not Specified", "") else side,
+                "comment":  inj.get("shortComment", ""),
+            })
+        if team_inj:
+            result[team_name] = team_inj
+    return result
+
+
 def load_nba_day(date_str: str) -> dict:
     """
     Load all NBA data for a given date string (YYYYMMDD).
-    Returns dict with keys: games, espn_error, kalshi_events, prop_markets.
+    Returns dict with keys: games, espn_error, kalshi_events, prop_markets, injuries.
     All fetching happens here — zero API calls during rendering.
     """
     games, espn_err = get_espn_games(date_str, "nba")
     kalshi_events   = get_kalshi_events("KXNBAGAME")
     prop_markets    = get_nba_prop_markets()
+    injuries        = get_nba_injuries()
 
     return {
         "games":          games,
         "espn_error":     espn_err,
         "kalshi_events":  kalshi_events,
         "prop_markets":   prop_markets,
+        "injuries":       injuries,
     }
 
 
