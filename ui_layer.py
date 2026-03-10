@@ -3,6 +3,7 @@ ui_layer.py — All UI rendering functions.
 Depends on: streamlit, model_layer (for pqs_label), utils (for am_odds, prob_to_pct).
 No API calls. No model computation. Renders pre-computed data only.
 """
+from __future__ import annotations
 import streamlit as st
 from utils import am_odds, prob_to_pct, normalize_weights
 from model_layer import pqs_label, classify_pick, NBA_GAME_PRESETS, CBB_GAME_PRESETS, PROP_PRESETS, get_preset_weights

@@ -13,6 +13,7 @@ Exports:
   get_prop_reasoning(result, player_name) -> list[str]
   normalize_weights(weights) -> dict
 """
+from __future__ import annotations
 import math
 from utils import (
     NBA_NET_RATINGS, CBB_TEAM_STATS, CBB_SEED_HISTORY, EDGE_THRESHOLDS,

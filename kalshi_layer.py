@@ -16,6 +16,7 @@ Supported Kalshi title formats (examples):
 
 Defensive parsing: if a market cannot be reliably classified, skip it.
 """
+from __future__ import annotations
 import re
 from utils import find_nba_team, team_text_match, city_of, nick_of
 
