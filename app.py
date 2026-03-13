@@ -466,7 +466,10 @@ def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs, min_
         seen.add(key)
 
         neutral = game.get("neutral_site", False)
-        result  = cbb_game_model(home, away, weights, neutral_site=neutral)
+        try:
+            result = cbb_game_model(home, away, weights, neutral_site=neutral)
+        except TypeError:
+            result = cbb_game_model(home, away, weights)
         if not result.get("valid"):
             continue
 
@@ -699,34 +702,75 @@ with tabs[0]:
         render_no_picks()
         render_matchup_breakdown(games, injuries_data)
 
-        # In advanced mode, show all games with model lines even without edge
+        # In advanced mode, show all games with model lines + pick diagnostic
         if advanced:
             st.markdown("---")
-            st.markdown("**All games (no qualifying edge):**")
+            st.markdown("**All games — pick diagnostic:**")
+            st.caption(
+                "Shows why each game has no qualifying pick today. "
+                "Common reasons: markets not yet priced, games in progress (markets closed), edge below threshold."
+            )
             for game in games:
                 home = game.get("home", "?")
                 away = game.get("away", "?")
                 if sport == "NBA":
                     result = nba_game_model(home, away, nba_weights)
                 else:
-                    result = cbb_game_model(home, away, cbb_weights)
-                if result.get("valid"):
-                    ev_tk = match_game_to_event(game, kalshi_events)
-                    kp_str = "—"
-                    if ev_tk:
-                        ev = next((e for e in kalshi_events if e.get("event_ticker") == ev_tk), {})
-                        nested = ev.get("markets", [])
-                        all_mkts = get_full_event_markets(ev_tk, nested)
-                        cats = categorize_game_markets(all_mkts, home, away)
-                        for ml in cats["moneyline"][:1]:
-                            kp_v = ml.get("kalshi_prob")
-                            if kp_v:
-                                kp_str = f"{kp_v*100:.0f}%"
+                    try:
+                        result = cbb_game_model(home, away, cbb_weights)
+                    except TypeError:
+                        result = cbb_game_model(home, away, cbb_weights)
+                if not result.get("valid"):
+                    continue
+                ev_tk = match_game_to_event(game, kalshi_events)
+                if not ev_tk:
                     st.markdown(
-                        f"**{away} @ {home}**  ·  {game.get('time_et','')}  |  "
-                        f"Model: {result['home_prob']*100:.0f}% / {result['away_prob']*100:.0f}%  ·  "
-                        f"Market (home): {kp_str}"
+                        f"**{away.split()[-1]} @ {home.split()[-1]}**  ·  {game.get('time_et','')}  "
+                        f"— ⚠️ No Kalshi market matched"
                     )
+                    continue
+                ev = next((e for e in kalshi_events if e.get("event_ticker") == ev_tk), {})
+                nested = ev.get("markets", [])
+                all_mkts = get_full_event_markets(ev_tk, nested)
+                cats = categorize_game_markets(all_mkts, home, away)
+                ml_list = cats["moneyline"]
+                best_edge = None
+                reason = "No moneyline markets found"
+                for ml in ml_list:
+                    kp = ml.get("kalshi_prob")
+                    if kp is None:
+                        reason = "Markets found but no active pricing (games may be in progress)"
+                        continue
+                    ti = ml.get("team_info") or {}
+                    team = ti.get("team")
+                    if team == home:
+                        mp = result["home_prob"]
+                    elif team == away:
+                        mp = result["away_prob"]
+                    else:
+                        continue
+                    e = calculate_edge(mp, kp)
+                    if e is not None:
+                        if best_edge is None or e > best_edge:
+                            best_edge = e
+                        pqs = calculate_pick_quality(e, "game", mp)
+                        if e < min_edge_val:
+                            reason = f"Best edge {e:.1f}% — below {min_edge_val:.0f}% threshold"
+                        elif pqs < min_pqs_val:
+                            reason = f"Edge {e:.1f}% ✓ but PQS {pqs} — below {min_pqs_val} threshold"
+                        else:
+                            reason = f"Qualifies: edge {e:.1f}%, PQS {pqs}"
+                kp_home = next(
+                    (ml.get("kalshi_prob") for ml in ml_list
+                     if (ml.get("team_info") or {}).get("team") == home),
+                    None
+                )
+                mkt_str = f"Market(home): {kp_home*100:.0f}%" if kp_home else "No price"
+                model_str = f"Model: {result['home_prob']*100:.0f}% / {result['away_prob']*100:.0f}%"
+                st.markdown(
+                    f"**{away.split()[-1]} @ {home.split()[-1]}**  ·  {game.get('time_et','')}  "
+                    f"·  {model_str}  ·  {mkt_str}  —  {reason}"
+                )
     else:
         st.caption(
             f"{len(game_picks)} qualifying pick{'s' if len(game_picks) != 1 else ''} for {date_lbl}"
@@ -996,6 +1040,19 @@ with tabs[5]:
     from tracker import load_tracker, log_picks as _tracker_log, set_result as _set_result
     from tracker import delete_pick as _delete_pick, compute_pnl, save_tracker
 
+    # ── Auto-log today's picks on first visit (no button click needed) ────────
+    _auto_key = f"auto_logged_{date_str}"
+    if not st.session_state.get(_auto_key):
+        _all_auto = game_picks + prop_picks
+        if _all_auto:
+            _auto_added, _ = _tracker_log(_all_auto, date_str)
+            if _auto_added:
+                st.toast(
+                    f"📋 Auto-logged {_auto_added} pick{'s' if _auto_added != 1 else ''} for today",
+                    icon="✅",
+                )
+        st.session_state[_auto_key] = True
+
     # ── Helpers ───────────────────────────────────────────────────────────────
     def _fmt_date(ds: str) -> str:
         try:
@@ -1024,8 +1081,9 @@ with tabs[5]:
     with btn_c:
         if all_today:
             if st.button(
-                f"📋  Log Today's {len(all_today)} Pick{'s' if len(all_today) != 1 else ''}",
-                type="primary", key="trk_log_btn",
+                f"🔄  Re-log Today's {len(all_today)} Pick{'s' if len(all_today) != 1 else ''}",
+                key="trk_log_btn",
+                help="Picks are auto-logged when you open this tab. Use this to log any new picks added since your last visit.",
             ):
                 added, skipped = _tracker_log(all_today, date_str)
                 if added:
@@ -1072,13 +1130,19 @@ with tabs[5]:
 
     # ── Empty state ───────────────────────────────────────────────────────────
     if not all_picks:
-        st.info(
-            "**No picks logged yet.**\n\n"
-            "1. Go to the **Today** or **Props** tab to see today's model picks\n"
-            "2. Come back here and click **Log Today's Picks** before games start\n"
-            "3. After the game, mark each pick Won / Lost / Push\n"
-            "4. Watch your P&L and win rate build up over time"
-        )
+        if game_picks or prop_picks:
+            st.info(
+                "**Today's picks were just auto-logged!** Refresh this tab to see them.\n\n"
+                "After the games finish, come back and mark each pick **Won / Lost / Push** "
+                "to build your P&L record."
+            )
+        else:
+            st.info(
+                "**No picks logged yet.**\n\n"
+                "Picks are automatically logged when the model finds value. "
+                "Visit the **Today** or **Props** tab to check if any qualify today, "
+                "then come back here to mark results after games finish."
+            )
         st.caption(
             "💡 On Streamlit Cloud: use **Export** at the end of each session and **Import** "
             "at the start of the next one to keep your history. Running locally? It saves automatically."
@@ -1110,6 +1174,49 @@ with tabs[5]:
                 f"Games: {bg['wins']}-{bg['losses']}  ({'+' if bg['net']>=0 else ''}{bg['net']:.2f}u)  ·  "
                 f"Props: {bp['wins']}-{bp['losses']}  ({'+' if bp['net']>=0 else ''}{bp['net']:.2f}u)"
             )
+
+        # ── Running balance (flat 1 unit per pick) ───────────────────────────
+        def _payout_flat(odds_str: str, units: float = 1.0) -> float:
+            """Profit (in units) for a winning bet at given American odds."""
+            s = (odds_str or "").strip().replace(",", "")
+            try:
+                n = int(s.lstrip("+"))
+                if n > 0 or s.startswith("+"):
+                    return units * n / 100
+                return units * 100 / abs(n)
+            except (ValueError, ZeroDivisionError):
+                return units
+
+        settled_sorted = sorted(
+            [p for p in all_picks if p.get("result") in ("W", "L", "P")],
+            key=lambda x: x.get("settled_at") or x.get("logged_at") or "",
+        )
+        if settled_sorted:
+            running_bal = 0.0
+            chart_rows  = []
+            for idx, p in enumerate(settled_sorted):
+                res   = p.get("result")
+                units = p.get("units_bet", 1.0)
+                if res == "W":
+                    running_bal += _payout_flat(p.get("odds_str", ""), units)
+                elif res == "L":
+                    running_bal -= units
+                # Push: balance unchanged
+                chart_rows.append({"Pick #": idx + 1, "Units": round(running_bal, 2)})
+
+            bal_sign = "+" if running_bal >= 0 else ""
+            bal_col, _ = st.columns([1, 3])
+            bal_col.metric(
+                "Balance (1u/pick)",
+                f"{bal_sign}{running_bal:.2f}u",
+                delta=f"{bal_sign}{running_bal:.2f}u",
+                delta_color="normal",
+                help="Cumulative P&L if you bet 1 unit on every model pick that was logged",
+            )
+            if len(chart_rows) > 1:
+                chart_df = pd.DataFrame(chart_rows).set_index("Pick #")
+                st.line_chart(chart_df["Units"], use_container_width=True, height=160)
+                st.caption("📈 Running P&L — 1 unit per pick (flat betting)")
 
         st.divider()
 

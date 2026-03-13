@@ -315,6 +315,14 @@ def match_game_to_event(game: dict, kalshi_events: list) -> str | None:
     """
     Find the best-matching Kalshi event_ticker for an ESPN game.
     Requires both teams to match (score = 4). Returns ticker or None.
+
+    Tries two methods:
+      1. Title-based: city or nickname appears in event title (works for full-name titles)
+      2. Ticker-based: ESPN abbreviation appears in the event_ticker suffix
+         (fallback for titles that use abbreviations like "OKC at MEM Winner?")
+
+    Ticker format: KXNBAGAME-YYMMMDDHH... e.g. KXNBAGAME-26MAR10BOSNYK
+    The 7-char date prefix (YYMMMDDD) is stripped before abbreviation matching.
     """
     home = game.get("home")
     away = game.get("away")
@@ -333,8 +341,38 @@ def match_game_to_event(game: dict, kalshi_events: list) -> str | None:
             best_score = score
             best_tk    = ev.get("event_ticker")
 
-    # Require both teams matched
-    return best_tk if best_score >= 4 else None
+    # Primary: both teams found in event title
+    if best_score >= 4:
+        return best_tk
+
+    # Fallback: match via ESPN abbreviations embedded in the event_ticker
+    # Build reverse map: "Los Angeles Lakers" → "LAL" etc.
+    from utils import ESPN_MAP
+    _rev = {v.lower(): k for k, v in ESPN_MAP.items()}
+    home_abbr = _rev.get(home.lower(), "")
+    away_abbr = _rev.get(away.lower(), "")
+
+    if not home_abbr or not away_abbr:
+        return None  # CBB/other teams — no ESPN abbreviation known
+
+    best_tk2    = None
+    best_score2 = 0
+
+    for ev in kalshi_events:
+        ticker    = ev.get("event_ticker", "").upper()
+        parts     = ticker.split("-", 1)
+        abbr_part = parts[1] if len(parts) == 2 else ticker
+        # Strip 7-char date prefix (YYMMMDDD e.g. "26MAR10")
+        if len(abbr_part) > 7:
+            abbr_part = abbr_part[7:]
+        h_tick = bool(home_abbr and home_abbr in abbr_part)
+        a_tick = bool(away_abbr and away_abbr in abbr_part)
+        score  = (2 if h_tick else 0) + (2 if a_tick else 0)
+        if score > best_score2:
+            best_score2 = score
+            best_tk2    = ev.get("event_ticker")
+
+    return best_tk2 if best_score2 >= 4 else None
 
 
 # ── KXNBASPREAD market parser ─────────────────────────────────────────────────
