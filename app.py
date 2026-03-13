@@ -465,7 +465,8 @@ def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs, min_
             continue
         seen.add(key)
 
-        result = cbb_game_model(home, away, weights)
+        neutral = game.get("neutral_site", False)
+        result  = cbb_game_model(home, away, weights, neutral_site=neutral)
         if not result.get("valid"):
             continue
 
@@ -512,6 +513,7 @@ def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs, min_
                 "pick_team":      team,
                 "pick_direction": "to win  ·  Moneyline",
                 "market_type":    "moneyline",
+                "neutral_site":   neutral,
                 "model_prob":     model_p,
                 "kalshi_prob":    kp,
                 "edge_pct":       edge,
@@ -589,6 +591,7 @@ def _build_prop_picks(prop_markets, min_edge, min_pqs, prop_preset, min_odds=-10
 
         bullets = get_prop_reasoning(result, player_name, stat_type, line, "over", kp)
         picks.append({
+            "sport":        "NBA",
             "player":       player_stats.get("name", player_name),
             "team":         player_stats.get("team", ""),
             "stat_type":    stat_type,
@@ -989,22 +992,235 @@ with tabs[4]:
 
 # ────────── TAB 6: TRACKER ───────────────────────────────────────────────────
 with tabs[5]:
-    st.markdown("### Pick Tracker")
-    st.info(
-        "Manual pick tracking coming soon.\n\n"
-        "Record your bets here to track P&L, win rate by stat type, "
-        "and model calibration over time."
+    import json as _json
+    from tracker import load_tracker, log_picks as _tracker_log, set_result as _set_result
+    from tracker import delete_pick as _delete_pick, compute_pnl, save_tracker
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+    def _fmt_date(ds: str) -> str:
+        try:
+            from datetime import datetime as _dt
+            return _dt.strptime(ds, "%Y%m%d").strftime("%b %-d")
+        except Exception:
+            return ds
+
+    def _pick_label(pick: dict) -> str:
+        """Short human-readable label for a pick."""
+        if pick.get("type") == "prop":
+            return f"{pick.get('team','')} {pick.get('pick_direction','')}"
+        nick = pick.get("team", "").split()[-1]
+        return f"{nick} {pick.get('pick_direction','')}"
+
+    st.markdown("### 📓 Pick Tracker")
+    st.caption(
+        "Log today's model picks before games tip off. Mark results afterwards. "
+        "Build a record to see how the model performs over time."
     )
 
-    # Placeholder structure
-    st.markdown("**Today's picks summary**")
-    total_today = len(game_picks) + len(prop_picks)
-    if total_today:
-        cols = st.columns(4)
-        cols[0].metric("Total Picks", total_today)
-        cols[1].metric("Game Picks",  len(game_picks))
-        cols[2].metric("Prop Picks",  len(prop_picks))
-        avg_pqs = round(sum(p["pqs"] for p in game_picks + prop_picks) / total_today)
-        cols[3].metric("Avg Score",   avg_pqs)
+    # ── Top row: Log + Export + Import ───────────────────────────────────────
+    all_today  = game_picks + prop_picks
+    btn_c, exp_c, imp_c = st.columns([2.5, 1, 1])
+
+    with btn_c:
+        if all_today:
+            if st.button(
+                f"📋  Log Today's {len(all_today)} Pick{'s' if len(all_today) != 1 else ''}",
+                type="primary", key="trk_log_btn",
+            ):
+                added, skipped = _tracker_log(all_today, date_str)
+                if added:
+                    st.success(f"Logged {added} new pick{'s' if added != 1 else ''}!")
+                    st.rerun()
+                else:
+                    st.info(f"All {skipped} picks already logged for this date.")
+        else:
+            st.button("No qualifying picks today", disabled=True, key="trk_log_dis")
+
+    tracker_data = load_tracker()
+    all_picks    = tracker_data.get("picks", [])
+
+    with exp_c:
+        if all_picks:
+            st.download_button(
+                "⬇  Export",
+                data=_json.dumps(tracker_data, indent=2, default=str),
+                file_name="betting_tracker.json",
+                mime="application/json",
+                key="trk_export",
+                help="Download your full tracker history as JSON. Re-upload on next session to restore.",
+            )
+
+    with imp_c:
+        uploaded = st.file_uploader(
+            "Import", type="json",
+            label_visibility="collapsed", key="trk_import",
+            help="Upload a previously exported tracker.json to restore history.",
+        )
+        if uploaded:
+            try:
+                imp_data = _json.loads(uploaded.read())
+                if "picks" in imp_data:
+                    save_tracker(imp_data)
+                    st.success("Tracker restored!")
+                    st.rerun()
+                else:
+                    st.error("Not a valid tracker file.")
+            except Exception:
+                st.error("Could not read file.")
+
+    st.divider()
+
+    # ── Empty state ───────────────────────────────────────────────────────────
+    if not all_picks:
+        st.info(
+            "**No picks logged yet.**\n\n"
+            "1. Go to the **Today** or **Props** tab to see today's model picks\n"
+            "2. Come back here and click **Log Today's Picks** before games start\n"
+            "3. After the game, mark each pick Won / Lost / Push\n"
+            "4. Watch your P&L and win rate build up over time"
+        )
+        st.caption(
+            "💡 On Streamlit Cloud: use **Export** at the end of each session and **Import** "
+            "at the start of the next one to keep your history. Running locally? It saves automatically."
+        )
+
     else:
-        st.caption("No qualifying picks today.")
+        # ── P&L Summary ───────────────────────────────────────────────────────
+        stats = compute_pnl(all_picks)
+        net   = stats["net_units"]
+        roi   = stats["roi_pct"]
+
+        mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+        record_str = f"{stats['wins']}-{stats['losses']}-{stats['pushes']}"
+        net_str    = f"+{net:.2f}u" if net >= 0 else f"{net:.2f}u"
+        roi_str    = f"+{roi:.1f}%" if roi >= 0 else f"{roi:.1f}%"
+
+        mc1.metric("Record (W-L-P)", record_str)
+        mc2.metric("Net Units",      net_str,
+                   delta=net_str, delta_color="normal")
+        mc3.metric("ROI",            roi_str)
+        mc4.metric("Win Rate",       f"{stats['win_rate']:.0f}%" if stats["settled"] else "—")
+        mc5.metric("Pending",        str(stats["pending"]))
+
+        # Breakdown by type (only if we have both)
+        bg = stats["by_game"]
+        bp = stats["by_prop"]
+        if (bg["wins"] + bg["losses"]) > 0 and (bp["wins"] + bp["losses"]) > 0:
+            st.caption(
+                f"Games: {bg['wins']}-{bg['losses']}  ({'+' if bg['net']>=0 else ''}{bg['net']:.2f}u)  ·  "
+                f"Props: {bp['wins']}-{bp['losses']}  ({'+' if bp['net']>=0 else ''}{bp['net']:.2f}u)"
+            )
+
+        st.divider()
+
+        # ── Pending: need results ──────────────────────────────────────────────
+        pending_picks = sorted(
+            [p for p in all_picks if not p.get("result")],
+            key=lambda x: x.get("date", ""), reverse=True,
+        )
+
+        if pending_picks:
+            st.markdown(f"#### ⏳ Mark Results  `{len(pending_picks)} pending`")
+
+            for pick in pending_picks:
+                pid        = pick["pick_id"]
+                date_disp  = _fmt_date(pick.get("date", ""))
+                sport_icon = "🏀" if pick.get("sport", "NBA") == "NBA" else "🏫"
+                label      = _pick_label(pick)
+                odds       = pick.get("odds_str", "—")
+                edge       = pick.get("edge_pct")
+                ev         = pick.get("ev_pct")
+                pqs        = pick.get("pqs")
+                cat        = pick.get("category", "")
+
+                edge_str = f" · Edge **{edge:.0f}%**" if edge else ""
+                ev_str   = f" · EV **+{ev:.1f}%**" if ev and ev > 0 else ""
+                cat_str  = f" · {cat}" if cat else ""
+                score_str = f" · Score {pqs}" if pqs else ""
+
+                st.markdown(
+                    f"{sport_icon} `{date_disp}` &nbsp; **{label}** &nbsp; `{odds}`"
+                    f"{edge_str}{ev_str}{cat_str}{score_str}",
+                    unsafe_allow_html=True,
+                )
+                r1, r2, r3, _, r5 = st.columns([1, 1, 1, 2, 0.4])
+                if r1.button("✅ Won",  key=f"w_{pid}"):
+                    _set_result(pid, "W"); st.rerun()
+                if r2.button("❌ Lost", key=f"l_{pid}"):
+                    _set_result(pid, "L"); st.rerun()
+                if r3.button("↩ Push", key=f"p_{pid}"):
+                    _set_result(pid, "P"); st.rerun()
+                if r5.button("🗑",     key=f"d_{pid}", help="Remove pick"):
+                    _delete_pick(pid); st.rerun()
+                st.markdown("<hr style='margin:6px 0;border-color:#30363d'>", unsafe_allow_html=True)
+
+        # ── History ────────────────────────────────────────────────────────────
+        history = sorted(
+            [p for p in all_picks if p.get("result")],
+            key=lambda x: x.get("date", ""), reverse=True,
+        )
+
+        if history:
+            st.markdown(f"#### 📋 History  `{len(history)} settled`")
+
+            # Filters
+            hf1, hf2, hf3 = st.columns(3)
+            filt_r = hf1.selectbox("Result", ["All", "Won", "Lost", "Push"],  key="hist_r")
+            filt_t = hf2.selectbox("Type",   ["All", "Game", "Prop"],         key="hist_t")
+            filt_s = hf3.selectbox("Sport",  ["All", "NBA", "CBB"],           key="hist_s")
+
+            filtered = history
+            if filt_r == "Won":  filtered = [p for p in filtered if p["result"] == "W"]
+            if filt_r == "Lost": filtered = [p for p in filtered if p["result"] == "L"]
+            if filt_r == "Push": filtered = [p for p in filtered if p["result"] == "P"]
+            if filt_t == "Game": filtered = [p for p in filtered if p.get("type") == "game"]
+            if filt_t == "Prop": filtered = [p for p in filtered if p.get("type") == "prop"]
+            if filt_s != "All":  filtered = [p for p in filtered if p.get("sport") == filt_s]
+
+            if filtered:
+                rows = []
+                for pick in filtered:
+                    result = pick.get("result", "")
+                    icon   = {"W": "✅", "L": "❌", "P": "↩"}.get(result, "")
+                    ev     = pick.get("ev_pct")
+                    edge   = pick.get("edge_pct")
+                    rows.append({
+                        "":       icon,
+                        "Date":   _fmt_date(pick.get("date", "")),
+                        "Pick":   _pick_label(pick),
+                        "Odds":   pick.get("odds_str", "—"),
+                        "Edge":   f"{edge:.0f}%" if edge else "—",
+                        "EV":     f"+{ev:.1f}%" if ev and ev > 0 else ("—" if not ev else f"{ev:.1f}%"),
+                        "Score":  pick.get("pqs") or "—",
+                        "Sport":  pick.get("sport", ""),
+                        "Type":   pick.get("type", "").title(),
+                    })
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+                # Filtered P&L
+                if filt_r != "All" or filt_t != "All" or filt_s != "All":
+                    fs = compute_pnl(filtered)
+                    fn = fs["net_units"]
+                    st.caption(
+                        f"Filtered — {fs['wins']}-{fs['losses']}-{fs['pushes']}  ·  "
+                        f"Net: {'+' if fn>=0 else ''}{fn:.2f}u  ·  "
+                        f"ROI: {'+' if fs['roi_pct']>=0 else ''}{fs['roi_pct']:.1f}%"
+                    )
+            else:
+                st.caption("No picks match that filter.")
+
+            # Correct a result
+            with st.expander("🔧 Correct a result"):
+                st.caption("Fix a mislabeled result or move a pick back to pending.")
+                pick_labels = {
+                    f"{_fmt_date(p.get('date',''))} · {_pick_label(p)} [{p.get('result','')}]": p["pick_id"]
+                    for p in history
+                }
+                sel = st.selectbox("Pick", list(pick_labels.keys()), key="corr_sel")
+                if sel:
+                    cpid = pick_labels[sel]
+                    cc1, cc2, cc3, cc4 = st.columns(4)
+                    if cc1.button("✅ Won",       key="corr_w"):  _set_result(cpid, "W");    st.rerun()
+                    if cc2.button("❌ Lost",      key="corr_l"):  _set_result(cpid, "L");    st.rerun()
+                    if cc3.button("↩ Push",      key="corr_p"):  _set_result(cpid, "P");    st.rerun()
+                    if cc4.button("🔄 Pending",  key="corr_clr"): _set_result(cpid, None);  st.rerun()

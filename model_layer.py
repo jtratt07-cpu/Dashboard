@@ -345,13 +345,16 @@ def _score_cbb_team(stats: dict, weights: dict) -> float:
     return round(score, 1)
 
 
-def cbb_game_model(home: str, away: str, weights: dict | None = None) -> dict:
+def cbb_game_model(home: str, away: str, weights: dict | None = None,
+                   neutral_site: bool = False) -> dict:
     """
     Predict CBB game outcome using KenPom-style efficiency ratings.
 
+    neutral_site=True: disables home court advantage (conference/NCAA tournaments).
+
     Returns:
       {home_prob, away_prob, expected_margin, confidence, factors,
-       home_score, away_score, gap, upset_context, valid}
+       home_score, away_score, gap, upset_context, neutral_site, valid}
     """
     if weights is None:
         weights = normalize_weights(CBB_GAME_PRESETS["recommended"])
@@ -366,8 +369,10 @@ def cbb_game_model(home: str, away: str, weights: dict | None = None) -> dict:
     gap        = round(home_score - away_score, 1)
 
     # Expected margin: ~3.5 composite pts ≈ 1 real point spread
-    raw_margin       = gap / 3.5
-    expected_margin  = raw_margin + _CBB_HOME_COURT
+    # Neutral site (tournaments): no home court added
+    raw_margin      = gap / 3.5
+    court_bonus     = 0.0 if neutral_site else _CBB_HOME_COURT
+    expected_margin = raw_margin + court_bonus
 
     z         = expected_margin / (_CBB_SPREAD_SIGMA * math.sqrt(2))
     home_prob = _win_prob_from_z(z)
@@ -403,6 +408,7 @@ def cbb_game_model(home: str, away: str, weights: dict | None = None) -> dict:
         "home_stats":      home_stats,
         "away_stats":      away_stats,
         "upset_context":   upset_ctx,
+        "neutral_site":    neutral_site,
         "factors":         factors,
     }
 

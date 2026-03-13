@@ -150,6 +150,46 @@ CBB_TEAM_STATS = {
     "Montana":         {"eff_margin": 4.5,"adj_o":108.5,"adj_d":104.0,"efg":0.468,"to_rate":0.198,"exp":0.90,"seed":14},
     "South Dakota St": {"eff_margin": 3.0,"adj_o":107.6,"adj_d":104.6,"efg":0.459,"to_rate":0.205,"exp":0.92,"seed":15},
     "Norfolk State":   {"eff_margin": 1.0,"adj_o":106.5,"adj_d":105.5,"efg":0.448,"to_rate":0.215,"exp":0.82,"seed":16},
+
+    # ── Additional power-conference & bubble teams ────────────────────────────
+    "North Carolina":  {"eff_margin":18.4,"adj_o":118.2,"adj_d":99.8, "efg":0.538,"to_rate":0.165,"exp":0.62,"seed":6},
+    "Indiana":         {"eff_margin":17.2,"adj_o":115.4,"adj_d":98.2, "efg":0.520,"to_rate":0.172,"exp":0.70,"seed":7},
+    "Texas A&M":       {"eff_margin":16.8,"adj_o":114.8,"adj_d":98.0, "efg":0.518,"to_rate":0.174,"exp":0.78,"seed":7},
+    "Ole Miss":        {"eff_margin":15.6,"adj_o":114.0,"adj_d":98.4, "efg":0.512,"to_rate":0.178,"exp":0.68,"seed":8},
+    "Michigan":        {"eff_margin":15.2,"adj_o":113.8,"adj_d":98.6, "efg":0.510,"to_rate":0.180,"exp":0.72,"seed":8},
+    "Arkansas":        {"eff_margin":14.8,"adj_o":113.5,"adj_d":98.7, "efg":0.508,"to_rate":0.182,"exp":0.65,"seed":9},
+    "TCU":             {"eff_margin":14.4,"adj_o":113.2,"adj_d":98.8, "efg":0.506,"to_rate":0.184,"exp":0.80,"seed":9},
+    "Pittsburgh":      {"eff_margin":14.0,"adj_o":112.9,"adj_d":98.9, "efg":0.504,"to_rate":0.186,"exp":0.75,"seed":9},
+    "Virginia":        {"eff_margin":13.6,"adj_o":112.6,"adj_d":99.0, "efg":0.502,"to_rate":0.155,"exp":0.88,"seed":10},
+    "Wake Forest":     {"eff_margin":13.2,"adj_o":112.3,"adj_d":99.1, "efg":0.498,"to_rate":0.188,"exp":0.72,"seed":10},
+    "Colorado State":  {"eff_margin":12.8,"adj_o":112.0,"adj_d":99.2, "efg":0.495,"to_rate":0.185,"exp":0.85,"seed":10},
+    "St. Bonaventure": {"eff_margin":11.2,"adj_o":111.0,"adj_d":99.8, "efg":0.490,"to_rate":0.188,"exp":0.85,"seed":11},
+    "New Mexico":      {"eff_margin":10.8,"adj_o":110.8,"adj_d":100.0,"efg":0.485,"to_rate":0.190,"exp":0.80,"seed":11},
+    "Georgia":         {"eff_margin":10.4,"adj_o":110.5,"adj_d":100.1,"efg":0.482,"to_rate":0.192,"exp":0.68,"seed":11},
+
+    # ── Mid-major tournament automatic bids ───────────────────────────────────
+    "Saint Mary's":    {"eff_margin":14.2,"adj_o":113.8,"adj_d":99.6, "efg":0.508,"to_rate":0.155,"exp":0.92,"seed":10},
+    "Drake":           {"eff_margin":11.8,"adj_o":111.5,"adj_d":99.7, "efg":0.492,"to_rate":0.175,"exp":0.90,"seed":12},
+    "Dayton":          {"eff_margin":10.5,"adj_o":110.5,"adj_d":100.0,"efg":0.480,"to_rate":0.182,"exp":0.85,"seed":11},
+    "Liberty":         {"eff_margin": 9.2,"adj_o":110.2,"adj_d":101.0,"efg":0.478,"to_rate":0.185,"exp":0.88,"seed":12},
+    "Oral Roberts":    {"eff_margin": 8.8,"adj_o":112.0,"adj_d":103.2,"efg":0.495,"to_rate":0.178,"exp":0.88,"seed":12},
+    "High Point":      {"eff_margin": 7.4,"adj_o":111.0,"adj_d":103.6,"efg":0.488,"to_rate":0.180,"exp":0.85,"seed":13},
+    "Wofford":         {"eff_margin": 6.8,"adj_o":110.5,"adj_d":103.7,"efg":0.485,"to_rate":0.182,"exp":0.88,"seed":13},
+    "Lipscomb":        {"eff_margin": 5.5,"adj_o":109.5,"adj_d":104.0,"efg":0.472,"to_rate":0.192,"exp":0.85,"seed":14},
+    "Bryant":          {"eff_margin": 5.0,"adj_o":109.0,"adj_d":104.0,"efg":0.468,"to_rate":0.195,"exp":0.82,"seed":14},
+    "UNCG":            {"eff_margin": 4.8,"adj_o":108.8,"adj_d":104.0,"efg":0.466,"to_rate":0.196,"exp":0.88,"seed":14},
+    "Akron":           {"eff_margin": 4.2,"adj_o":108.0,"adj_d":103.8,"efg":0.462,"to_rate":0.200,"exp":0.85,"seed":15},
+    "Longwood":        {"eff_margin": 3.5,"adj_o":107.8,"adj_d":104.3,"efg":0.460,"to_rate":0.202,"exp":0.88,"seed":15},
+    "Sacred Heart":    {"eff_margin": 2.0,"adj_o":107.0,"adj_d":105.0,"efg":0.452,"to_rate":0.210,"exp":0.82,"seed":16},
+    "SIUE":            {"eff_margin": 1.5,"adj_o":106.8,"adj_d":105.3,"efg":0.450,"to_rate":0.212,"exp":0.80,"seed":16},
+
+    # ── Alternate name spellings (match ESPN display names) ───────────────────
+    "UNC":                  {"eff_margin":18.4,"adj_o":118.2,"adj_d":99.8, "efg":0.538,"to_rate":0.165,"exp":0.62,"seed":6},
+    "North Carolina Tar Heels": {"eff_margin":18.4,"adj_o":118.2,"adj_d":99.8,"efg":0.538,"to_rate":0.165,"exp":0.62,"seed":6},
+    "UConn Huskies":        {"eff_margin":19.4,"adj_o":116.9,"adj_d":97.5, "efg":0.532,"to_rate":0.165,"exp":0.75,"seed":5},
+    "Gonzaga Bulldogs":     {"eff_margin":19.1,"adj_o":118.5,"adj_d":99.4, "efg":0.545,"to_rate":0.158,"exp":0.78,"seed":5},
+    "Michigan State Spartans":{"eff_margin":22.1,"adj_o":117.5,"adj_d":95.4,"efg":0.530,"to_rate":0.168,"exp":0.95,"seed":3},
+    "Iowa State Cyclones":  {"eff_margin":23.8,"adj_o":118.9,"adj_d":95.1, "efg":0.538,"to_rate":0.163,"exp":0.82,"seed":2},
 }
 
 CBB_SEED_HISTORY = {
@@ -346,18 +386,107 @@ def team_text_match(full_name: str, text: str) -> bool:
         return True
     return False
 
+# ESPN display name → CBB_TEAM_STATS key (handles mascot suffixes and alt names)
+_CBB_ESPN_ALIASES = {
+    "connecticut": "UConn", "uconn huskies": "UConn",
+    "duke blue devils": "Duke",
+    "auburn tigers": "Auburn",
+    "houston cougars": "Houston",
+    "florida gators": "Florida",
+    "tennessee volunteers": "Tennessee",
+    "kansas jayhawks": "Kansas",
+    "iowa state cyclones": "Iowa State",
+    "purdue boilermakers": "Purdue",
+    "alabama crimson tide": "Alabama",
+    "michigan state spartans": "Michigan State",
+    "wisconsin badgers": "Wisconsin",
+    "arizona wildcats": "Arizona",
+    "marquette golden eagles": "Marquette",
+    "st. john's red storm": "St John's", "saint john's red storm": "St John's",
+    "texas tech red raiders": "Texas Tech",
+    "kentucky wildcats": "Kentucky",
+    "north carolina tar heels": "North Carolina", "unc tar heels": "North Carolina",
+    "baylor bears": "Baylor",
+    "illinois fighting illini": "Illinois",
+    "san diego state aztecs": "San Diego State", "sdsu": "San Diego State",
+    "nc state wolfpack": "NC State",
+    "vcu rams": "VCU",
+    "saint mary's gaels": "Saint Mary's",
+    "michigan wolverines": "Michigan",
+    "indiana hoosiers": "Indiana",
+    "nebraska cornhuskers": "Nebraska",
+    "northwestern wildcats": "Northwestern",
+    "oklahoma sooners": "Oklahoma",
+    "penn state nittany lions": "Penn State",
+    "ohio state buckeyes": "Ohio State",
+    "memphis tigers": "Memphis",
+    "missouri tigers": "Missouri",
+    "ucla bruins": "UCLA",
+    "mississippi state bulldogs": "Mississippi State",
+    "villanova wildcats": "Villanova",
+    "xavier musketeers": "Xavier",
+    "creighton bluejays": "Creighton",
+    "oregon ducks": "Oregon",
+    "louisville cardinals": "Louisville",
+    "clemson tigers": "Clemson",
+    "gonzaga bulldogs": "Gonzaga",
+    "drake bulldogs": "Drake",
+    "dayton flyers": "Dayton",
+    "liberty flames": "Liberty",
+    "oral roberts golden eagles": "Oral Roberts",
+    "wofford terriers": "Wofford",
+    "colgate raiders": "Colgate",
+    "vermont catamounts": "Vermont",
+    "yale bulldogs": "Yale",
+    "montana grizzlies": "Montana",
+    "south dakota state jackrabbits": "South Dakota St",
+    "norfolk state spartans": "Norfolk State",
+    "grand canyon antelopes": "Grand Canyon",
+    "mcneese cowboys": "McNeese", "mcneese state cowboys": "McNeese",
+    "colorado state rams": "Colorado State",
+    "new mexico lobos": "New Mexico",
+}
+
 def find_cbb_team(name: str):
-    """Fuzzy match to CBB_TEAM_STATS. Returns (key, stats)."""
-    nl = name.lower()
+    """
+    Fuzzy match a team name to CBB_TEAM_STATS.
+    Handles ESPN full display names (e.g. 'Duke Blue Devils' → 'Duke').
+    Returns (key, stats_dict).
+    """
+    if not name:
+        return name, {"eff_margin": 8.0, "adj_o": 110.0, "adj_d": 102.0,
+                      "efg": 0.480, "to_rate": 0.190, "exp": 0.75, "seed": None}
+    nl = name.lower().strip()
+
+    # 1. Direct alias lookup (ESPN display names, mascot suffixes)
+    if nl in _CBB_ESPN_ALIASES:
+        key = _CBB_ESPN_ALIASES[nl]
+        if key in CBB_TEAM_STATS:
+            return key, CBB_TEAM_STATS[key]
+
+    # 2. Exact / substring match on CBB_TEAM_STATS keys
     for key, stats in CBB_TEAM_STATS.items():
-        if key.lower() in nl or nl in key.lower():
+        kl = key.lower()
+        if kl == nl or kl in nl or nl in kl:
             return key, stats
+
+    # 3. Word-overlap match (handles "Duke Blue Devils" → "Duke")
     nw = set(nl.split())
+    best_key = best_stats = None
+    best_ratio = 0.0
     for key, stats in CBB_TEAM_STATS.items():
         kw = set(key.lower().split())
-        if nw & kw and len(nw & kw) / max(len(kw), 1) >= 0.5:
-            return key, stats
-    # Return defaults for unknown teams
+        overlap = nw & kw
+        if overlap:
+            ratio = len(overlap) / max(len(kw), 1)
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_key = key
+                best_stats = stats
+    if best_ratio >= 0.5:
+        return best_key, best_stats
+
+    # 4. Unknown team — return neutral defaults
     return name, {"eff_margin": 8.0, "adj_o": 110.0, "adj_d": 102.0,
                   "efg": 0.480, "to_rate": 0.190, "exp": 0.75, "seed": None}
 

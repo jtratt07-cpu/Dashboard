@@ -55,18 +55,20 @@ def get_espn_games(date_str: str, sport: str = "nba") -> tuple:
                 away = full
                 away_score = score
 
-        date_iso = ev.get("date", "")
-        status   = ev.get("status", {}).get("type", {}).get("description", "Scheduled")
-        short_st = ev.get("status", {}).get("type", {}).get("shortDetail", "")
+        date_iso     = ev.get("date", "")
+        status       = ev.get("status", {}).get("type", {}).get("description", "Scheduled")
+        short_st     = ev.get("status", {}).get("type", {}).get("shortDetail", "")
+        neutral_site = comp.get("neutralSite", False)
         games.append({
-            "away":        away,
-            "home":        home,
-            "time_et":     fmt_time(date_iso),
-            "status":      status,
+            "away":         away,
+            "home":         home,
+            "time_et":      fmt_time(date_iso),
+            "status":       status,
             "short_status": short_st,
-            "date_iso":    date_iso,
-            "home_score":  home_score,
-            "away_score":  away_score,
+            "date_iso":     date_iso,
+            "home_score":   home_score,
+            "away_score":   away_score,
+            "neutral_site": neutral_site,
         })
 
     return games, None
@@ -343,14 +345,22 @@ def load_cbb_day(date_str: str) -> dict:
     """
     Load all CBB data for a given date.
     Returns dict with keys: games, espn_error, kalshi_events.
-    Tries KXCBBGAME first; falls back to keyword search for conf/NCAA tournament games.
-    """
-    games, espn_err = get_espn_games(date_str, "cbb")
-    kalshi_events   = get_kalshi_events("KXCBBGAME")
 
-    # Fallback: keyword search catches conf tournament & NCAA games not under KXCBBGAME
-    if not kalshi_events:
-        kalshi_events = _search_cbb_events_by_keyword()
+    Always merges KXCBBGAME + keyword search so conference tournament and
+    NCAA tournament games (often under different series tickers) are captured.
+    """
+    games, espn_err   = get_espn_games(date_str, "cbb")
+    primary_events    = get_kalshi_events("KXCBBGAME")
+    keyword_events    = _search_cbb_events_by_keyword()
+
+    # Merge both sources — deduplicate by event_ticker
+    seen: set = set()
+    kalshi_events: list = []
+    for ev in primary_events + keyword_events:
+        tk = ev.get("event_ticker", "")
+        if tk and tk not in seen:
+            seen.add(tk)
+            kalshi_events.append(ev)
 
     return {
         "games":         games,
