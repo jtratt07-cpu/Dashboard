@@ -736,6 +736,17 @@ with tabs[0]:
                 ml_list = cats["moneyline"]
                 best_edge = None
                 reason = "No moneyline markets found"
+                # TEMP DEBUG — remove after diagnosis
+                if ml_list:
+                    _d = ml_list[0]["market_dict"]
+                    st.caption(
+                        f"DEBUG {ev_tk}: ticker={_d.get('ticker','?')} "
+                        f"yb$={_d.get('yes_bid_dollars','MISSING')} "
+                        f"ya$={_d.get('yes_ask_dollars','MISSING')} "
+                        f"lp$={_d.get('last_price_dollars','MISSING')} "
+                        f"yb={_d.get('yes_bid','MISSING')} "
+                        f"kp={ml_list[0].get('kalshi_prob')}"
+                    )
                 for ml in ml_list:
                     kp = ml.get("kalshi_prob")
                     if kp is None:
