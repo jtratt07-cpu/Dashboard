@@ -92,7 +92,7 @@ def render_player_projections_table(games: list, injuries: dict = None) -> None:
         st.caption("No player data available for tonight's teams.")
         return
     df = pd.DataFrame(rows).sort_values("PRA", ascending=False)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, hide_index=True)
 def render_matchup_breakdown(games: list, injuries: dict) -> None:
     """
     Show per-game injury report for tonight's matchups.
@@ -902,7 +902,7 @@ with tabs[1]:
                         "Direction": pp.get("over_under","").capitalize(),
                         "Market%":   f"{pp.get('kalshi_prob',0)*100:.0f}%",
                     })
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(rows), hide_index=True)
             else:
                 st.caption("No prop markets could be parsed from Kalshi today.")
 
@@ -973,7 +973,7 @@ with tabs[4]:
     st.markdown("**Edge Thresholds** (read-only, defined in utils.py)")
     thresh_data = [{"Pick Type": k.upper(), "Min Edge": f"{v:.0f}%"}
                    for k, v in EDGE_THRESHOLDS.items()]
-    st.dataframe(pd.DataFrame(thresh_data), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(thresh_data), hide_index=True)
 
     st.divider()
     st.markdown("**Pick Categories — What Each Label Means**")
@@ -1215,7 +1215,7 @@ with tabs[5]:
             )
             if len(chart_rows) > 1:
                 chart_df = pd.DataFrame(chart_rows).set_index("Pick #")
-                st.line_chart(chart_df["Units"], use_container_width=True, height=160)
+                st.line_chart(chart_df["Units"], height=160)
                 st.caption("📈 Running P&L — 1 unit per pick (flat betting)")
 
         st.divider()
@@ -1302,7 +1302,7 @@ with tabs[5]:
                         "Sport":  pick.get("sport", ""),
                         "Type":   pick.get("type", "").title(),
                     })
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(rows), hide_index=True)
 
                 # Filtered P&L
                 if filt_r != "All" or filt_t != "All" or filt_s != "All":

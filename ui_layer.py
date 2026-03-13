@@ -407,7 +407,7 @@ def render_player_projections_table(games: list, injuries: dict = None) -> None:
         return
 
     df = pd.DataFrame(rows).sort_values("PRA", ascending=False)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, hide_index=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -610,7 +610,7 @@ def render_nba_net_ratings() -> None:
         [{"Team": t, "Net Rating": r} for t, r in
          sorted(NBA_NET_RATINGS.items(), key=lambda x: x[1], reverse=True)]
     )
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, hide_index=True)
 
 
 def render_cbb_ratings() -> None:
@@ -631,7 +631,7 @@ def render_cbb_ratings() -> None:
             "Seed":        s.get("seed", "—"),
         })
     df = pd.DataFrame(rows).sort_values("Eff Margin", ascending=False)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, hide_index=True)
 
 
 def render_player_stats_table() -> None:
@@ -656,4 +656,4 @@ def render_player_stats_table() -> None:
             "USG%":      s.get("usage", "—"),
         })
     df = pd.DataFrame(rows).sort_values("PRA", ascending=False)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, hide_index=True)
