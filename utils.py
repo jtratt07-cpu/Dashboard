@@ -382,6 +382,14 @@ def team_text_match(full_name: str, text: str) -> bool:
     nick = nick_of(full_name)
     if city and re.search(r'\b' + re.escape(city) + r'\b', t):
         return True
+    # Multi-word city fallback: Kalshi often shortens team names (e.g. "Portland Trail Blazers"
+    # becomes just "Portland" in event titles). Try the first word of the city, but only if
+    # it's 4+ characters to avoid false positives from short words like "new", "los", "san"
+    # (which would cause e.g. "New Orleans" to match "New York" events).
+    if city and ' ' in city:
+        first_word = city.split()[0]
+        if len(first_word) >= 4 and re.search(r'\b' + re.escape(first_word) + r'\b', t):
+            return True
     if nick and re.search(r'\b' + re.escape(nick) + r'\b', t):
         return True
     return False

@@ -492,8 +492,12 @@ def categorize_game_markets(markets: list, home: str, away: str) -> dict:
     seen   = set()
 
     for m in markets:
-        title = m.get("title", "")
-        key   = title.lower().strip()
+        title  = m.get("title", "")
+        ticker = m.get("ticker", "")
+        # Deduplicate by ticker (unique per market). Both home/away moneyline markets
+        # share the same title (e.g. "Memphis at Detroit Winner?"), so title-based
+        # dedup would drop one team's market entirely. Ticker is always unique.
+        key = (ticker or title).lower().strip()
         if key in seen:
             continue
         seen.add(key)
