@@ -30,17 +30,41 @@ def get_implied_prob(market: dict, require_bid_ask: bool = False):
     require_bid_ask=True: only return a price if both yes_bid AND yes_ask
     are live (> 0).  Use this for prop markets where last_price is often
     stale (from a previous settled game) and produces nonsense odds.
+
+    Supports both Kalshi API formats:
+      New (v2 current): yes_bid_dollars = "0.83"  (decimal string, already a probability)
+      Old (legacy):     yes_bid = 83               (integer cents, divide by 100)
     """
-    yb = market.get("yes_bid")  or 0
-    ya = market.get("yes_ask")  or 0
-    lp = market.get("last_price") or 0
+    def _to_prob(dollar_val, cent_val) -> float:
+        """Return probability from whichever field is populated."""
+        # Try new dollar-string format first ("0.83" → 0.83)
+        if dollar_val is not None:
+            try:
+                v = float(str(dollar_val).strip())
+                if 0 < v <= 1.0:
+                    return v
+            except (ValueError, TypeError):
+                pass
+        # Fall back to old integer-cent format (83 → 0.83)
+        if cent_val:
+            try:
+                v = float(cent_val)
+                if v > 0:
+                    return v / 100.0
+            except (ValueError, TypeError):
+                pass
+        return 0.0
+
+    yb = _to_prob(market.get("yes_bid_dollars"), market.get("yes_bid"))
+    ya = _to_prob(market.get("yes_ask_dollars"), market.get("yes_ask"))
+    lp = _to_prob(market.get("last_price_dollars"), market.get("last_price"))
 
     if yb > 0 and ya > 0:
-        return round((yb + ya) / 200, 4)
+        return round((yb + ya) / 2, 4)
     if require_bid_ask:
         return None           # no active two-sided market — skip
     if lp > 0:
-        return round(lp / 100, 4)
+        return round(lp, 4)
     return None
 
 

@@ -355,7 +355,7 @@ def _build_nba_game_picks(
                 if _odds_int(kp) < min_odds:
                     continue
 
-                mq  = 1.0 if ml["market_dict"].get("yes_bid") else 0.7
+                mq  = 1.0 if (ml["market_dict"].get("yes_bid") or ml["market_dict"].get("yes_bid_dollars")) else 0.7
                 pqs = calculate_pick_quality(edge, "game", model_p, mq)
                 if pqs < min_pqs:
                     continue
@@ -502,7 +502,7 @@ def _build_cbb_game_picks(games, kalshi_events, weights, min_edge, min_pqs, min_
             if _odds_int(kp) < min_odds:
                 continue
 
-            mq  = 1.0 if ml["market_dict"].get("yes_bid") else 0.7
+            mq  = 1.0 if (ml["market_dict"].get("yes_bid") or ml["market_dict"].get("yes_bid_dollars")) else 0.7
             pqs = calculate_pick_quality(edge, "game", model_p, mq)
             if pqs < min_pqs:
                 continue
@@ -587,7 +587,7 @@ def _build_prop_picks(prop_markets, min_edge, min_pqs, prop_preset, min_odds=-10
         if _odds_int(kp) < min_odds:
             continue
 
-        mq  = 1.0 if pp["market_dict"].get("yes_bid") else 0.7
+        mq  = 1.0 if (pp["market_dict"].get("yes_bid") or pp["market_dict"].get("yes_bid_dollars")) else 0.7
         pqs = calculate_pick_quality(edge, stat_type, model_p, mq)
         if pqs < min_pqs:
             continue
