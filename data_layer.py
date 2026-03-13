@@ -321,8 +321,8 @@ def load_nba_day(date_str: str) -> dict:
 def _search_cbb_events_by_keyword() -> list:
     """
     Fallback CBB market discovery via keyword search.
-    Catches conference tournament and NCAA tournament games if they appear
-    under a different series ticker than KXCBBGAME.
+    Catches any NCAA/conference tournament games that appear under an
+    unexpected series ticker (Kalshi renames series occasionally).
     Returns a synthetic list of event-like dicts keyed by event_ticker.
     """
     markets = search_kalshi_markets("college basketball winner", "open", 200)
@@ -346,17 +346,18 @@ def load_cbb_day(date_str: str) -> dict:
     Load all CBB data for a given date.
     Returns dict with keys: games, espn_error, kalshi_events.
 
-    Always merges KXCBBGAME + keyword search so conference tournament and
-    NCAA tournament games (often under different series tickers) are captured.
+    Kalshi renamed the CBB game series from KXCBBGAME → KXNCAAMBGAME (Mar 2026).
+    We fetch both + keyword search so any future renames are still caught.
     """
     games, espn_err   = get_espn_games(date_str, "cbb")
-    primary_events    = get_kalshi_events("KXCBBGAME")
+    primary_events    = get_kalshi_events("KXNCAAMBGAME")   # current series (renamed Mar 2026)
+    legacy_events     = get_kalshi_events("KXCBBGAME")       # old series — keep as fallback
     keyword_events    = _search_cbb_events_by_keyword()
 
-    # Merge both sources — deduplicate by event_ticker
+    # Merge all sources — deduplicate by event_ticker
     seen: set = set()
     kalshi_events: list = []
-    for ev in primary_events + keyword_events:
+    for ev in primary_events + legacy_events + keyword_events:
         tk = ev.get("event_ticker", "")
         if tk and tk not in seen:
             seen.add(tk)
